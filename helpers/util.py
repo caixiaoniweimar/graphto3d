@@ -122,13 +122,13 @@ def normalize_box_params(box_params, scale=3):
     :param scale: float scalar that scales the parameter distribution
     :return: normalized box parameters array of shape [7]
     """
-    mean = np.array([1.3827214, 1.309359, 0.9488993, -0.12464812, 0.6188591, -0.54847, 0.73127955])
-    std = np.array([1.7797655, 1.657638, 0.8501885, 1.9160025, 2.0038228, 0.70099753, 0.50347435])
+    mean = np.array([ 0.21988743, 0.21643892, 0.16870684, 0.00570856, -0.00549303, 0.28968436 ])
+    std = np.array([ 0.23130621, 0.20096205, 0.22712821, 0.1206166, 0.11472497, 0.13773446  ])
 
     return scale * ((box_params - mean) / std)
 
 
-def denormalize_box_params(box_params, scale=3, params=7):
+def denormalize_box_params(box_params, scale=3, params=6):
     """ Denormalize the box parameters utilizing the accumulated dataset statistics
 
     :param box_params: float array of shape [params] containing the box parameters
@@ -137,11 +137,8 @@ def denormalize_box_params(box_params, scale=3, params=7):
     :return: denormalized box parameters array of shape [params]
     """
     if params == 6:
-        mean = np.array([1.3827214, 1.309359, 0.9488993, -0.12464812, 0.6188591, -0.54847])
-        std = np.array([1.7797655, 1.657638, 0.8501885, 1.9160025, 2.0038228, 0.70099753])
-    elif params == 7:
-        mean = np.array([1.3827214, 1.309359, 0.9488993, -0.12464812, 0.6188591, -0.54847, 0.73127955])
-        std = np.array([1.7797655, 1.657638, 0.8501885, 1.9160025, 2.0038228, 0.70099753, 0.50347435])
+        mean = np.array([ 0.21988743, 0.21643892, 0.16870684, 0.00570856, -0.00549303, 0.28968436 ])
+        std = np.array([ 0.23130621, 0.20096205, 0.22712821, 0.1206166, 0.11472497, 0.13773446  ])
     else:
         raise NotImplementedError
     return (box_params * std) / scale + mean
@@ -155,8 +152,8 @@ def batch_torch_denormalize_box_params(box_params, scale=3):
     :return: float tensor of shape [N, 6], the denormalized box parameters
     """
 
-    mean = torch.tensor([1.3827214, 1.309359, 0.9488993, -0.12464812, 0.6188591, -0.54847]).reshape(1,-1).float().cuda()
-    std = torch.tensor([1.7797655, 1.657638, 0.8501885, 1.9160025, 2.0038228, 0.70099753]).reshape(1,-1).float().cuda()
+    mean = torch.tensor([ 0.21988743, 0.21643892, 0.16870684, 0.00570856, -0.00549303, 0.28968436 ]).reshape(1,-1).float().cuda()
+    std = torch.tensor([ 0.23130621, 0.20096205, 0.22712821, 0.1206166, 0.11472497, 0.13773446  ]).reshape(1,-1).float().cuda()
 
     return (box_params * std) / scale + mean
 

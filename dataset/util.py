@@ -109,25 +109,25 @@ def write_ply(filename, points, mask=None, faces=None):
                     faces[face_i, 0], faces[face_i, 1], faces[face_i, 2]))
 
 import json
-def get_label_name_to_class_id(file):
-    labelName2classId = {} #{'teapot_2': 8}
+def get_label_name_to_global_id(file):
+    labelName2InstanceId = {} #{'teapot_2': 8}
     classId2ClassName = {} #{ 1: 'fork'}
 
     json_path = file.split('.')[0]+'_view-2.json'
     with open(json_path, 'r') as f:
         dict_out = json.load(f)
         for obj in dict_out['objects']:
-            labelName2classId[obj['name']] = obj['class_id']
-            classId2ClassName[obj['class_id']] = obj['class']
-    if not labelName2classId or not classId2ClassName:
+            labelName2InstanceId[obj['name']] = obj['global_id']
+            classId2ClassName[obj['global_id']] = obj['class']
+    if not labelName2InstanceId or not classId2ClassName:
         raise ValueError(f"labelName2classId or classId2ClassName of {file} shouldn't be empty!")
-    return labelName2classId, classId2ClassName
+    return labelName2InstanceId, classId2ClassName
 
-def get_points_instances_from_mesh(file, labelName2classId):
+def get_points_instances_from_mesh(file, labelName2InstanceId):
     """ 一行一行读obj, 若是v, 则是vertex, 若是o, 则是object的name, 每存储一个v, 则存储一个instance_id
     需要name_to_id的dict
     Input: file: e.g. .../7b4acb843fd4b0b335836c728d324152_0001_5_scene-X-bowl-X_mid.obj 
-           labelName2classId { "cup_1":1 ....}
+           labelName2InstanceId { "cup_1":50 ....}
     Output: vertices(num_of_vertices,3); instance(num_of_vertices, ) """    
     points = np.empty((0, 3))
     instances = np.empty((0, ))
@@ -135,7 +135,7 @@ def get_points_instances_from_mesh(file, labelName2classId):
         for line in f:
             if line.startswith('o'):
                 label_name = line.strip()[2:]
-                instance_id = int(labelName2classId[label_name])
+                instance_id = int(labelName2InstanceId[label_name])
             elif line.startswith('v'):
                 vertex = list(map(float, line.split()[1:]))
                 if len(vertex)==3:

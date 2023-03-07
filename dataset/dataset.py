@@ -261,13 +261,13 @@ class RIODatasetSceneGraph(data.Dataset):
             raise FileNotFoundError(f"Cannot find {scene_id}.obj file. Path: {file}")
 
         # instance2label, e.g. {1: 'floor', 2: 'wall', 3: 'picture', 4: 'picture'}
-        labelName2classId, instance2label = util.get_label_name_to_class_id(file)
+        labelName2InstanceId, instance2label = util.get_label_name_to_global_id(file)
         selected_instances = list(self.objs_json[scene_id].keys())
         keys = list(instance2label.keys())
 
         if self.shuffle_objs:
             random.shuffle(keys)
-
+        print(f"Code 270 =================================================================")
         feats_in = None
         # If true, expected paths to saved atlasnet features will be set here
         if self.with_feats and self.path2atlas is not None:
@@ -286,19 +286,19 @@ class RIODatasetSceneGraph(data.Dataset):
                                                                       scene_id))
             if self.recompute_feats:
                 feats_path += 'tmp'
-
+        print(f"Code 289 =================================================================")
         # Load points if with features but features cannot be found or are forced to be recomputed
         # Loads points if use_points is set to true
         if (self.with_feats and (not os.path.exists(feats_path) or self.recompute_feats)) or self.use_points:
             if file in self.files: # Caching
                 (points, instances) = self.files[file]
             else:
-                points, instances, _, _ = util.get_points_instances_from_mesh(file, labelName2classId)
+                points, instances, _, _ = util.get_points_instances_from_mesh(file, labelName2InstanceId)
 
                 if self.fm.user_free > 5:
                     self.files[file] = (points, instances)
 
-
+        print(f"Code 301 =================================================================")
         instance2mask = {}
         instance2mask[0] = 0
 
@@ -324,7 +324,7 @@ class RIODatasetSceneGraph(data.Dataset):
             else:#! scene_class_id == -1 -> 不存在self.classes中
                 instance2mask[scene_instance_id] = 0
                 raise ValueError("scene_class_id should not be -1.")
-
+            print(f"Code 327 =================================================================")
             # mask to cat:
             if (scene_class_id >= 0) and (scene_instance_id > 0) and (key in selected_instances):
                 if self.use_canonical:#! 不进入
@@ -350,9 +350,9 @@ class RIODatasetSceneGraph(data.Dataset):
                 instances_order.append(key)
                 if not self.vae_baseline:#!network_type==shared!=sln则进入
                     bbox = normalize_box_params(bbox)
-                
+                print(f"Code 353 =================================================================")
                 tight_boxes.append(bbox)
-
+        print(f"Code 355 =================================================================")
         if self.with_feats:
             # If precomputed features exist, we simply load them
             if os.path.exists(feats_path):
@@ -366,7 +366,7 @@ class RIODatasetSceneGraph(data.Dataset):
                     ordered_feats.append(feats_in[:-1][feats_in_instance])
                 ordered_feats.append(np.zeros([1, feats_in.shape[1]]))
                 feats_in = list(np.concatenate(ordered_feats, axis=0))
-
+        print(f"Code 369 =================================================================")
         # Sampling of points from object if they are loaded
         if (self.with_feats and (not os.path.exists(feats_path) or feats_in is None)) or self.use_points:
             masks = np.array(list(map(lambda l: instance2mask[l] if l in instance2mask.keys() else 0, instances)),
@@ -396,6 +396,7 @@ class RIODatasetSceneGraph(data.Dataset):
                     obj_pointset = self.norm_tensor(obj_pointset, np.asarray(tight_boxes[i]),
                                                     scale=True, rotation=self.use_canonical, scale_func=self.scale_func)
             obj_points[i] = obj_pointset
+            print(f"Code 399 =================================================================")
         else:
             obj_points = None
 
@@ -411,7 +412,7 @@ class RIODatasetSceneGraph(data.Dataset):
                     triples.append([subject, predicate, object])
             else:
                 continue
-
+        print(f"Code 415 =================================================================")        
         if self.use_scene_rels:
             # add _scene_ object and _in_scene_ connections
             scene_idx = len(cat)
@@ -420,7 +421,7 @@ class RIODatasetSceneGraph(data.Dataset):
             cat.append(0)
             # dummy scene box
             tight_boxes.append([-1, -1, -1, -1, -1, -1])
-
+        print(f"Code 424 =================================================================")
         output = {}
         if self.use_points:#! X
             output['scene'] = points
@@ -443,7 +444,8 @@ class RIODatasetSceneGraph(data.Dataset):
                 path = path[:-3]
 
             pickle.dump(feats_out, open(path, 'wb'))
-
+            print(f"Code 447 =================================================================")
+        print(f"Code 448 =================================================================")
         # prepare outputs
         output['encoder'] = {}
         output['encoder']['objs'] = cat
@@ -478,6 +480,7 @@ class RIODatasetSceneGraph(data.Dataset):
                         output['manipulate']['relship'] = (rel, pair)
                     else:
                         return -1
+        print(f"Code 483 =================================================================")
         # torchify
         output['encoder']['objs'] = torch.from_numpy(np.array(output['encoder']['objs'], dtype=np.int64))
         output['encoder']['triples'] = torch.from_numpy(np.array(output['encoder']['triples'], dtype=np.int64))
