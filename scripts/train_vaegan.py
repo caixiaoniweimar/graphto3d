@@ -31,32 +31,32 @@ parser.add_argument('--nepoch', type=int, default=101, help='number of epochs to
 # paths and filenames
 parser.add_argument('--outf', type=str, default='checkpoint', help='output folder')
 parser.add_argument('--model', type=str, default='', help='model path')
-parser.add_argument('--dataset', required=False, type=str, default="./GT", help="dataset path")
-parser.add_argument('--dataset_3RScan', type=str, default='', help="dataset path of 3RScan")
-parser.add_argument('--label_file', required=False, type=str, default='labels.instances.align.annotated.ply', help="label file name")
+parser.add_argument('--dataset', required=False, type=str, default="/media/caixiaoni/xiaonicai-u/test_pipeline_dataset", help="dataset path")
+parser.add_argument('--dataset_raw', required=False, type=str, default='/media/caixiaoni/xiaonicai-u/test_pipeline_dataset/raw', help="raw dataset path")
+parser.add_argument('--label_file', required=False, type=str, default='.obj', help="label file name")
 parser.add_argument('--logf', default='logs', help='folder to save tensorboard logs')
-parser.add_argument('--exp', default='./experiments/layout_test', help='experiment name')
-parser.add_argument('--path2atlas', default="./experiments/model_36.pth", type=str)
+parser.add_argument('--exp', default='./experiments/graphto3d_test', help='experiment name')
+parser.add_argument('--path2atlas', required=False, default="./experiments/atlasnet/model_70.pth", type=str)
 
 # GCN parameters
 parser.add_argument('--residual', type=bool_flag, default=False, help="residual in GCN")
 parser.add_argument('--pooling', type=str, default='avg', help="pooling method in GCN")
 
 # dataset related
-parser.add_argument('--large', default=True, type=bool_flag, help='large set of shape class labels')
-parser.add_argument('--use_splits', default=True, type=bool_flag, help='Set to true if you want to use splitted training data')
+parser.add_argument('--large', default=False, type=bool_flag, help='large set of shape class labels')
+parser.add_argument('--use_splits', default=False, type=bool_flag, help='不需要splitSet to true if you want to use splitted training data')
 parser.add_argument('--use_scene_rels', type=bool_flag, default=True, help="connect all nodes to a root scene node")
-parser.add_argument('--with_points', type=bool_flag, default=False, help="if false and with_feats is false, only predicts layout."
+parser.add_argument('--with_points', type=bool_flag, default=False, help="with_feats为True即可if false and with_feats is false, only predicts layout."
                                                                          "If true always also loads pointsets. Notice that this is much "
                                                                          "slower than only loading the save features. Therefore, "
                                                                          "the recommended setting is with_points=False and with_feats=True.")
-parser.add_argument('--with_feats', type=bool_flag, default=True, help="if true reads latent point features instead of pointsets."
+parser.add_argument('--with_feats', type=bool_flag, default=True, help="若为True但不存在,需要生成特征,若存在,不用点而用特征if true reads latent point features instead of pointsets."
                                                                        "If not existing, they get generated at the beginning.")
 parser.add_argument('--shuffle_objs', type=bool_flag, default=True, help="shuffle objs of a scene")
 parser.add_argument('--num_points', type=int, default=1024, help='number of points for each object')
 parser.add_argument('--rio27', default=False, type=bool_flag)
-parser.add_argument('--use_canonical', default=True, type=bool_flag)
-parser.add_argument('--with_angles', default=True, type=bool_flag)
+parser.add_argument('--use_canonical', default=False, type=bool_flag)#!不需要有direction
+parser.add_argument('--with_angles', default=False, type=bool_flag)#!不需要有angle
 parser.add_argument('--num_box_params', default=6, type=int)
 parser.add_argument('--crop_floor', default=False, type=bool_flag)
 
@@ -64,9 +64,9 @@ parser.add_argument('--crop_floor', default=False, type=bool_flag)
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=4)
 parser.add_argument('--overfiting_debug', type=bool_flag, default=False)
 parser.add_argument('--weight_D_box', default=0.1, type=float, help="Box Discriminator")
-parser.add_argument('--with_changes', default=True, type=bool_flag)
+parser.add_argument('--with_changes', default=False, type=bool_flag)
 parser.add_argument('--with_shape_disc', default=True, type=bool_flag)
-parser.add_argument('--with_manipulator', default=True, type=bool_flag)
+parser.add_argument('--with_manipulator', default=False, type=bool_flag)
 
 parser.add_argument('--replace_latent', default=True, type=bool_flag)
 parser.add_argument('--network_type', default='shared', choices=['dis', 'sln', 'mlp', 'shared'], type=str)
@@ -97,11 +97,11 @@ def train():
     # instantiate scene graph dataset for training
     dataset = RIODatasetSceneGraph(
             root=args.dataset,
-            root_3rscan=args.dataset_3RScan,
+            root_raw=args.dataset_raw,
             label_file=args.label_file,
             npoints=args.num_points,
             path2atlas=args.path2atlas,
-            split='train_scans',
+            split='train_scenes',
             shuffle_objs=(args.shuffle_objs and not args.overfiting_debug),
             use_points=args.with_points,
             use_scene_rels=args.use_scene_rels,

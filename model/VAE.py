@@ -31,7 +31,7 @@ class VAE(nn.Module):
                                  , replace_latent=replace_latent,
                                  residual=residual, gconv_pooling=gconv_pooling, use_angles=False)
 
-        elif self.type_ == 'shared':
+        elif self.type_ == 'shared':#!进入
             assert distribution_before is not None and replace_latent is not None and with_changes is not None
             self.vae = Shared(vocab, embedding_dim=128, decoder_cat=True, mlp_normalization="batch",
                               gconv_num_layers=5, gconv_num_shared_layer=5, with_changes=with_changes, use_angles=with_angles,

@@ -15,13 +15,13 @@ import pickle
 
 
 class RIODatasetSceneGraph(data.Dataset):
-    def __init__(self, root, root_3rscan,
+    def __init__(self, root, root_raw,
                  label_file, npoints=2500, class_choice=None,
                  split='train', data_augmentation=True, shuffle_objs=False,
                  pass_scan_id=False, use_points=True,
                  use_scene_rels=False, data_len=None,
                  with_changes=True, vae_baseline=False,
-                 scale_func='diag', eval=False, eval_type='addition',
+                 scale_func='diag', eval=False, eval_type='none',
                  atlas=None, path2atlas=None, with_feats=False,
                  seed=True, use_splits=False, large=False,
                  use_rio27=False, recompute_feats=False, use_canonical=False,
@@ -52,7 +52,7 @@ class RIODatasetSceneGraph(data.Dataset):
         self.use_points = use_points
         self.root = root
         # list of class categories
-        self.catfile = os.path.join(self.root, 'classes.txt')
+        self.catfile = os.path.join(self.root, 'labels.txt')
         self.cat = {}
         self.scans = []
         self.data_augmentation = data_augmentation
@@ -62,7 +62,7 @@ class RIODatasetSceneGraph(data.Dataset):
 
         self.fm = FreeMemLinux('GB')
         self.vocab = {}
-        with open(os.path.join(self.root, 'classes.txt'), "r") as f:
+        with open(os.path.join(self.root, 'labels.txt'), "r") as f:
             self.vocab['object_idx_to_name'] = f.readlines()
         with open(os.path.join(self.root, 'relationships.txt'), "r") as f:
             self.vocab['pred_idx_to_name'] = f.readlines()
@@ -70,26 +70,21 @@ class RIODatasetSceneGraph(data.Dataset):
         splitfile = os.path.join(self.root, '{}.txt'.format(split))
 
         filelist = open(splitfile, "r").read().splitlines()
-        self.filelist = [file.rstrip() for file in filelist]
+        self.filelist = [file.rstrip() for file in filelist] #? 包含对应type的所有scene_names
         # list of relationship categories
-        self.relationships = self.read_relationships(os.path.join(self.root, 'relationships.txt'))
+        self.relationships = self.read_relationships(os.path.join(self.root, 'relationships.txt'))#?所有的relationship名称
 
         # uses scene sections of up to 9 objects (from 3DSSG) if true, and full scenes otherwise
         self.use_splits = use_splits
-        if split == 'train_scans': # training set
-            splits_fname = 'relationships_train_clean' if self.use_splits else 'relationships_merged_train_clean'
+        if split == 'train_scenes': # training set
+            splits_fname = 'relationships_train'
             self.rel_json_file = os.path.join(self.root, '{}.json'.format(splits_fname))
-            self.box_json_file = os.path.join(self.root, 'obj_boxes_train_refined.json')
-            self.floor_json_file = os.path.join(self.root, 'floor_boxes_split_train.json')
-        else: # validation set
-            splits_fname = 'relationships_validation_clean' if self.use_splits else 'relationships_merged_validation_clean'
-            self.rel_json_file = os.path.join(self.root, '{}.json'.format(splits_fname))
-            self.box_json_file = os.path.join(self.root, 'obj_boxes_val_refined.json')
-            self.floor_json_file = os.path.join(self.root, 'floor_boxes_split_val.json')
+            self.box_json_file = os.path.join(self.root, 'obj_boxes_train.json')
 
-        if self.crop_floor:
-            with open(self.floor_json_file, "r") as read_file:
-                self.floor_data = json.load(read_file)
+        else: # validation set
+            splits_fname = 'relationships_validation'
+            self.rel_json_file = os.path.join(self.root, '{}.json'.format(splits_fname))
+            self.box_json_file = os.path.join(self.root, 'obj_boxes_validation.json')
 
         self.relationship_json, self.objs_json, self.tight_boxes_json = \
                 self.read_relationship_json(self.rel_json_file, self.box_json_file)
@@ -103,18 +98,13 @@ class RIODatasetSceneGraph(data.Dataset):
 
         self.shuffle_objs = shuffle_objs
 
-        self.root_3rscan = root_3rscan
-        if self.root_3rscan == '':
-            self.root_3rscan = os.path.join(self.root, "data")
+        self.root_raw = root_raw
+        if self.root_raw == '':
+            self.root_raw = os.path.join(self.root, "raw")
 
         # option to map object classes to a smaller class set from 3RScan
         # not used in the current paper results
         self.use_rio27 = use_rio27
-        if self.use_rio27:
-            self.vocab_rio27 = json.load(open(os.path.join(self.root, "classes_rio27.json"), "r"))
-            self.vocab['object_idx_to_name'] = self.vocab_rio27['rio27_idx_to_name']
-            self.vocab['object_name_to_idx'] = self.vocab_rio27['rio27_name_to_idx']
-        self.mapping_full2rio27 = json.load(open(os.path.join(self.root, "mapping_full2rio27.json"), "r"))
 
         with open(self.catfile, 'r') as f:
             for line in f:
@@ -122,23 +112,14 @@ class RIODatasetSceneGraph(data.Dataset):
                 self.cat[category] = category
         if not class_choice is None:
             self.cat = {k: v for k, v in self.cat.items() if k in class_choice}
+            raise ValueError("class_choice should be None!")
 
         self.classes = dict(zip(sorted(self.cat), range(len(self.cat))))
 
         # we had to discard some underrepresented classes for the shape generation
         # either not part of shapenet, or limited and low quality samples in 3rscan
-        if not large:
-            points_classes = ['bed', 'chair', 'armchair', 'desk', 'door', 'floor', 'picture', 'sofa', 'couch',
-                              'stool', 'table']
-        else: # larger set of shape classes
-            points_classes = ['ball', 'basket', 'bench', 'bed', 'box', 'cabinet', 'chair', 'armchair',
-                              'desk', 'door', 'floor', 'picture', 'sofa', 'couch', 'commode', 'monitor',
-                              'stool', 'tv', 'table']
-        if self.use_rio27:
-            points_classes = list(self.vocab_rio27['rio27_name_to_idx'].keys())
-            points_classes.remove("_scene_")
-            points_classes.remove("wall")
-            points_classes.remove("ceiling")
+        if not large: #large=False进入
+            points_classes = ['fork', 'knife', 'tablespoon','teaspoon', 'plate', 'bowl', 'cup', 'teapot', 'pitcher', 'can', 'box','obstacle', 'support_table']
 
         points_classes_idx = []
         for pc in points_classes:
@@ -147,11 +128,9 @@ class RIODatasetSceneGraph(data.Dataset):
                     points_classes_idx.append(self.classes[pc])
                 else:
                     points_classes_idx.append(0)
+                raise ValueError("class_choice should be None!")
             else:
-                if not use_rio27:
-                    points_classes_idx.append(self.classes[pc])
-                else:
-                    points_classes_idx.append(int(self.vocab_rio27['rio27_name_to_idx'][pc]))
+                points_classes_idx.append(self.classes[pc])
 
         self.point_classes_idx = points_classes_idx + [0]
         self.sorted_cat_list = sorted(self.cat)
@@ -181,35 +160,35 @@ class RIODatasetSceneGraph(data.Dataset):
 
         with open(json_file, "r") as read_file:
             data = json.load(read_file)
-            for scan in data['scans']:
+            for scene in data['scenes']:
 
                 relationships = []
-                for realationship in scan["relationships"]:
-                    realationship[2] -= 1
+                for realationship in scene["relationships"]:
+                    realationship[2] -= 1 #! id为6, 在txt中为5
                     relationships.append(realationship)
 
-                # for every scan in rel json, we append the scan id
-                rel[scan["scan"] + "_" + str(scan["split"])] = relationships
-                self.scans.append(scan["scan"] + "_" + str(scan["split"]))
+                # for every scene in rel json, we append the scene id
+                rel[scene["scene_id"]] = relationships
+                self.scans.append(scene["scene_id"])
 
                 objects = {}
                 boxes = {}
-                for k, v in scan["objects"].items():
+                for k, v in scene["objects"].items():
                     objects[int(k)] = v
                     try:
                         boxes[int(k)] = {}
-                        boxes[int(k)]['param7'] = box_data[scan["scan"]][k]["param7"]
-                        boxes[int(k)]['param7'][6] = np.deg2rad(boxes[int(k)]['param7'][6])
-                        if self.use_canonical:
-                            if "direction" in box_data[scan["scan"]][k].keys():
-                                boxes[int(k)]['direction'] = box_data[scan["scan"]][k]["direction"]
+                        boxes[int(k)]['param6'] = box_data[scene["scene_id"]][k]["param6"]
+                        if self.use_canonical:#! 不进入
+                            if "direction" in box_data[scene["scene_id"]][k].keys():
+                                boxes[int(k)]['direction'] = box_data[scene["scene_id"]][k]["direction"]
                             else:
                                 boxes[int(k)]['direction'] = 0
+                            raise ValueError("use_canonical should be False")
                     except:
                         # probably box was not saved because there were 0 points in the instance!
                         continue
-                objs[scan["scan"] + "_" + str(scan["split"])] = objects
-                tight_boxes[scan["scan"] + "_" + str(scan["split"])] = boxes
+                objs[scene["scene_id"]] = objects
+                tight_boxes[scene["scene_id"]] = boxes
         return rel, objs, tight_boxes
 
     def read_relationships(self, read_file):
@@ -224,20 +203,8 @@ class RIODatasetSceneGraph(data.Dataset):
                 relationships.append(relationship)
         return relationships
 
-    def load_points(self, filename, factor=1, filter_mask=False):
-        point_set, _, _, mask = util.read_ply(filename)
-        if filter_mask:
-            point_set = point_set[np.where(mask > 0)[0], :]
-        choice = np.random.choice(len(point_set), self.npoints * factor, replace=True)
-        point_set = point_set[choice, :]
-        if len(mask) > 0:
-            mask.shape = (mask.shape[0], 1)  # in place reshape
-            mask = mask[choice, :]
-            mask = torch.from_numpy(np.array(mask, dtype=np.uint8))
-        point_set = torch.from_numpy(point_set)
-        return point_set, mask
-
     def norm_tensor(self, p, params7=None, scale=False, center=True, rotation=False, scale_func='diag'):
+#(obj_pointset, denormalize_box_params(tight_boxes[i]),scale=True, rotation=self.use_canonical, scale_func=self.scale_func)
         """ Given a set of points of an object and (optionally) a oriented 3D box, normalize points
 
         :param p: tensor of 3D pointset
@@ -263,8 +230,9 @@ class RIODatasetSceneGraph(data.Dataset):
             # first if needed rotate to canonical rotation
             # apply scaling
             # if needed rotate back
-            if not rotation:
+            if not rotation and len(params7)>6:#将点集 p 绕着 $z$ 轴逆时针旋转了 -params7[-1] 度
                 p = (torch.from_numpy(get_rotation(-params7[-1], degree=False).astype("float32")) @ p.T).T
+                raise ValueError("len(params7) should only be 6 without degree")
             if scale_func == 'diag':
                 # OPTION 1: normalize diagonal = 1
                 norm2 = np.linalg.norm(params7[:3].astype("float32"))
@@ -280,50 +248,21 @@ class RIODatasetSceneGraph(data.Dataset):
                 p = ((p - min_p) / norm2) * 2. - 1.  # between -1 and 1 in all directions
             else:
                 raise NotImplementedError
-            if not rotation:
+            if not rotation and len(params7)>6: #将点集 p 绕着 $z$ 轴顺时针旋转了 params7[-1] 度
                 p = (torch.from_numpy(get_rotation(params7[-1], degree=False).astype("float32")) @ p.T).T
+                raise ValueError("len(params7) should only be 6 without degree")
         return p
 
-    def load_semseg(self, json_file):
-        """ Loads semantic segmentation from json file
-
-        :param json_file: path to file
-        :return: dict, that maps instance label to text semantic label
-        """
-        instance2label = {}
-        with open(json_file, "r") as read_file:
-            data = json.load(read_file)
-            for segGroups in data['segGroups']:
-                instance2label[segGroups["id"]] = segGroups["label"].lower()
-        return instance2label
-
     def __getitem__(self, index):
-        scan_id = self.scans[index]
-        scan_id_no_split = scan_id.split('_')[0]
-        split = scan_id.split('_')[1]
-
-        if self.crop_floor:
-            scene_floor = self.floor_data[scan_id_no_split][split]
-            floor_idx = list(scene_floor.keys())[0]
-            if self.center_scene_to_floor:
-                scene_center = np.asarray(scene_floor[floor_idx]['params7'][3:6])
-            else:
-                scene_center = np.array([0, 0, 0])
-
-            min_box = np.asarray(scene_floor[floor_idx]['min_box']) - scene_center
-            max_box = np.asarray(scene_floor[floor_idx]['max_box']) - scene_center
-
-        file = os.path.join(self.root_3rscan, scan_id_no_split, self.label_file)
-        if os.path.exists(os.path.join(self.root_3rscan, scan_id_no_split, "semseg.v2.json")):
-            semseg_file = os.path.join(self.root_3rscan, scan_id_no_split, "semseg.v2.json")
-        elif os.path.exists(os.path.join(self.root_3rscan, scan_id_no_split, "semseg.json")):
-            semseg_file = os.path.join(self.root_3rscan, scan_id_no_split, "semseg.json")
-        else:
-            raise FileNotFoundError("Cannot find semseg.json file.")
+        scene_id = self.scans[index]
+        #root_raw: ..../test_pipeline_dataset/raw/{table_id}/{scene_id}.obj
+        file = os.path.join(self.root_raw, scene_id.split('_')[0], scene_id+self.label_file)
+        if not os.path.exists(file):
+            raise FileNotFoundError(f"Cannot find {scene_id}.obj file. Path: {file}")
 
         # instance2label, e.g. {1: 'floor', 2: 'wall', 3: 'picture', 4: 'picture'}
-        instance2label = self.load_semseg(semseg_file)
-        selected_instances = list(self.objs_json[scan_id].keys())
+        labelName2classId, instance2label = util.get_label_name_to_class_id(file)
+        selected_instances = list(self.objs_json[scene_id].keys())
         keys = list(instance2label.keys())
 
         if self.shuffle_objs:
@@ -335,21 +274,16 @@ class RIODatasetSceneGraph(data.Dataset):
             _, atlasname = os.path.split(self.path2atlas)
             atlasname = atlasname.split('.')[0]
 
-            if not self.large:
-                feats_path = os.path.join(self.root_3rscan, scan_id.split('_')[0],
+            if not self.large:#! 进入 因为large=False
+                feats_path = os.path.join(self.root_raw, scene_id.split('_')[0],
                                           '{}_small_{}_{}.pkl'.format(atlasname,
                                                                       'splits' if self.use_splits else 'merged',
-                                                                      scan_id.split('_')[1]))
+                                                                      scene_id))
             else:
-                feats_path = os.path.join(self.root_3rscan, scan_id.split('_')[0],
+                feats_path = os.path.join(self.root_raw, scene_id.split('_')[0],
                                           '{}_large_{}_{}.pkl'.format(atlasname,
                                                                       'splits' if self.use_splits else 'merged',
-                                                                      scan_id.split('_')[1]))
-                if self.crop_floor:
-                    feats_path = os.path.join(self.root_3rscan, scan_id.split('_')[0],
-                                          '{}_large_{}_{}_floor.pkl'.format(atlasname,
-                                                                      'splits' if self.use_splits else 'merged',
-                                                                      scan_id.split('_')[1]))
+                                                                      scene_id))
             if self.recompute_feats:
                 feats_path += 'tmp'
 
@@ -359,14 +293,11 @@ class RIODatasetSceneGraph(data.Dataset):
             if file in self.files: # Caching
                 (points, instances) = self.files[file]
             else:
-                points, instances, _, _ = util.read_ply(file)
+                points, instances, _, _ = util.get_points_instances_from_mesh(file, labelName2classId)
 
                 if self.fm.user_free > 5:
                     self.files[file] = (points, instances)
 
-            if self.crop_floor and self.center_scene_to_floor:
-                print("shifting points")
-                points = points - scene_center.reshape(1, -1)
 
         instance2mask = {}
         instance2mask[0] = 0
@@ -379,44 +310,34 @@ class RIODatasetSceneGraph(data.Dataset):
         instances_order = []
         selected_shapes = []
 
-        for key in keys:
+        for key in keys: #{'1', 2}
             # get objects from the selected list of classes of 3dssg
             scene_instance_id = key
             scene_instance_class = instance2label[key]
             scene_class_id = -1
-            if scene_instance_class in self.classes and \
-                    (not self.use_rio27 or self.mapping_full2rio27[scene_instance_class] != '-'):
-                if self.use_rio27:
-                    scene_instance_class = self.mapping_full2rio27[scene_instance_class]
-                    scene_class_id = int(self.vocab_rio27['rio27_name_to_idx'][scene_instance_class])
-                else:
-                    scene_class_id = self.classes[scene_instance_class]
+            if scene_instance_class in self.classes:
+                scene_class_id = self.classes[scene_instance_class]
+            
             if scene_class_id != -1 and key in selected_instances:
                 instance2mask[scene_instance_id] = counter + 1
                 counter += 1
-            else:
+            else:#! scene_class_id == -1 -> 不存在self.classes中
                 instance2mask[scene_instance_id] = 0
+                raise ValueError("scene_class_id should not be -1.")
 
             # mask to cat:
             if (scene_class_id >= 0) and (scene_instance_id > 0) and (key in selected_instances):
-                if self.use_canonical:
-                    direction = self.tight_boxes_json[scan_id][key]['direction']
+                if self.use_canonical:#! 不进入
+                    direction = self.tight_boxes_json[scene_id][key]['direction']
                     if direction in [-1, 0, 6]:
                         # skip invalid point clouds with ambiguous direction annotation
                         selected_shapes.append(False)
                     else:
                         selected_shapes.append(True)
                 cat.append(scene_class_id)
-                bbox = self.tight_boxes_json[scan_id][key]['param7'].copy()
-                if self.crop_floor and key in self.floor_data[scan_id_no_split][split].keys():
-                    bbox = self.floor_data[scan_id_no_split][split][key]['params7'].copy()
-                    bbox[6] = np.deg2rad(bbox[6])
-                    direction = self.floor_data[scan_id_no_split][split][key]['direction']
+                bbox = self.tight_boxes_json[scene_id][key]['param6'].copy()
 
-                if self.crop_floor and self.center_scene_to_floor:
-                    bbox[3:6] -= scene_center
-
-                if self.use_canonical:
+                if self.use_canonical:#! 不进入
                     if direction > 1 and direction < 5:
                         # update direction-less angle with direction data (shifts it by 90 degree
                         # for every added direction value
@@ -427,14 +348,9 @@ class RIODatasetSceneGraph(data.Dataset):
                             bbox[1] = temp
                     # for other options, do not change the box
                 instances_order.append(key)
-                if not self.vae_baseline:
-                    bins = np.linspace(0, np.deg2rad(360), 24)
-                    angle = np.digitize(bbox[6], bins)
+                if not self.vae_baseline:#!network_type==shared!=sln则进入
                     bbox = normalize_box_params(bbox)
-                    bbox[6] = angle
-                else:
-                    bins = np.linspace(0, np.deg2rad(360), 24)
-                    bbox[6] = np.digitize(bbox[6], bins)
+                
                 tight_boxes.append(bbox)
 
         if self.with_feats:
@@ -461,13 +377,6 @@ class RIODatasetSceneGraph(data.Dataset):
             for i in range(len(cat)):
                 obj_pointset = points[np.where(masks == i + 1)[0], :]
 
-                if self.crop_floor and self.vocab['object_idx_to_name'][cat[i]].split('\n')[0] == 'floor':
-                    filter_mask = (obj_pointset[:,0] > min_box[0]) * (obj_pointset[:,0] < max_box[0]) \
-                      * (obj_pointset[:,1] > min_box[1]) * (obj_pointset[:,1] < max_box[1])
-
-                    obj_pointset = obj_pointset[np.where(filter_mask > 0)[0], :]
-
-                    print(self.vocab['object_idx_to_name'][cat[i]].split('\n')[0], len(obj_pointset))
                 if len(obj_pointset) >= self.npoints:
                     choice = np.random.choice(len(obj_pointset), self.npoints, replace=False)
                 else:
@@ -480,7 +389,7 @@ class RIODatasetSceneGraph(data.Dataset):
                 obj_pointset = obj_pointset[choice, :]
                 obj_pointset = torch.from_numpy(obj_pointset.astype(np.float32))
 
-                if not self.vae_baseline:
+                if not self.vae_baseline:#! network_type=shared进入
                     obj_pointset = self.norm_tensor(obj_pointset, denormalize_box_params(tight_boxes[i]),
                                            scale=True, rotation=self.use_canonical, scale_func=self.scale_func)
                 else:
@@ -491,7 +400,7 @@ class RIODatasetSceneGraph(data.Dataset):
             obj_points = None
 
         triples = []
-        rel_json = self.relationship_json[scan_id]
+        rel_json = self.relationship_json[scene_id]
 
         for r in rel_json: # create relationship triplets from data
             if r[0] in instance2mask.keys() and r[1] in instance2mask.keys():
@@ -510,10 +419,10 @@ class RIODatasetSceneGraph(data.Dataset):
                 triples.append([i, 0, scene_idx])
             cat.append(0)
             # dummy scene box
-            tight_boxes.append([-1, -1, -1, -1, -1, -1, -1])
+            tight_boxes.append([-1, -1, -1, -1, -1, -1])
 
         output = {}
-        if self.use_points:
+        if self.use_points:#! X
             output['scene'] = points
 
         # if features are requested but the files don't exist, we run all loaded pointclouds through atlasnet
@@ -551,26 +460,10 @@ class RIODatasetSceneGraph(data.Dataset):
             output['manipulate']['type'] = 'none'
             output['decoder'] = copy.deepcopy(output['encoder'])
         else:
-            if not self.eval:
-                if self.with_changes:
-                    output['manipulate']['type'] = ['relationship', 'addition', 'none'][
-                        np.random.randint(3)]  # removal is trivial - so only addition and rel change
-                else:
-                    output['manipulate']['type'] = 'none'
+            if not self.eval:#! 进入 因为self.eval=False
+                output['manipulate']['type'] = 'none'
                 output['decoder'] = copy.deepcopy(output['encoder'])
-                if output['manipulate']['type'] == 'addition':
-                    node_id = self.remove_node_and_relationship(output['encoder'])
-                    if node_id >= 0:
-                        output['manipulate']['added'] = node_id
-                    else:
-                        output['manipulate']['type'] = 'none'
-                elif output['manipulate']['type'] == 'relationship':
-                    rel, pair, suc = self.modify_relship(output['decoder'])
-                    if suc:
-                        output['manipulate']['relship'] = (rel, pair)
-                    else:
-                        output['manipulate']['type'] = 'none'
-            else:
+            else:#!X
                 output['manipulate']['type'] = self.eval_type
                 output['decoder'] = copy.deepcopy(output['encoder'])
                 if output['manipulate']['type'] == 'addition':
@@ -589,21 +482,20 @@ class RIODatasetSceneGraph(data.Dataset):
         output['encoder']['objs'] = torch.from_numpy(np.array(output['encoder']['objs'], dtype=np.int64))
         output['encoder']['triples'] = torch.from_numpy(np.array(output['encoder']['triples'], dtype=np.int64))
         output['encoder']['boxes'] = torch.from_numpy(np.array(output['encoder']['boxes'], dtype=np.float32))
-        if self.use_points:
+        if self.use_points:#!X
             output['encoder']['points'] = torch.from_numpy(np.array(output['encoder']['points'], dtype=np.float32))
-        if self.with_feats:
+        if self.with_feats:#!进入
             output['encoder']['feats'] = torch.from_numpy(np.array(output['encoder']['feats'], dtype=np.float32))
 
         output['decoder']['objs'] = torch.from_numpy(np.array(output['decoder']['objs'], dtype=np.int64))
         output['decoder']['triples'] = torch.from_numpy(np.array(output['decoder']['triples'], dtype=np.int64))
         output['decoder']['boxes'] = torch.from_numpy(np.array(output['decoder']['boxes'], dtype=np.float32))
-        if self.use_points:
+        if self.use_points:#!X
             output['decoder']['points'] = torch.from_numpy(np.array(output['decoder']['points'], dtype=np.float32))
-        if self.with_feats:
+        if self.with_feats:#!进入
             output['decoder']['feats'] = torch.from_numpy(np.array(output['decoder']['feats'], dtype=np.float32))
 
-        output['scan_id'] = scan_id_no_split
-        output['split_id'] = scan_id.split('_')[1]
+        output['scene_id'] = scene_id
         output['instance_id'] = instances_order
 
         return output
@@ -724,9 +616,7 @@ def collate_fn_vaegan(batch, use_points=False):
     out = {}
 
     out['scene_points'] = []
-    out['scan_id'] = []
     out['instance_id'] = []
-    out['split_id'] = []
 
     out['missing_nodes'] = []
     out['missing_nodes_decoder'] = []
@@ -738,9 +628,8 @@ def collate_fn_vaegan(batch, use_points=False):
         if batch[i] == -1:
             return -1
         # notice only works with single batches
-        out['scan_id'].append(batch[i]['scan_id'])
+        out['scene_id'].append(batch[i]['scene_id'])
         out['instance_id'].append(batch[i]['instance_id'])
-        out['split_id'].append(batch[i]['split_id'])
 
         if batch[i]['manipulate']['type'] == 'addition':
             out['missing_nodes'].append(global_node_id + batch[i]['manipulate']['added'])
