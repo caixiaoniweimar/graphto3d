@@ -249,28 +249,20 @@ def train():
             encoded_enc_points[enc_scene_nodes] = torch.zeros([torch.sum(enc_scene_nodes), encoded_enc_points.shape[1]]).float().cuda()
             encoded_dec_points[dec_scene_nodes] = torch.zeros([torch.sum(dec_scene_nodes), encoded_dec_points.shape[1]]).float().cuda()
 
-            if args.num_box_params == 7:
-                # all parameters, including angle, procesed by the box_net
-                enc_boxes = enc_tight_boxes
-                dec_boxes = dec_tight_boxes
-            elif args.num_box_params == 6:
+            if args.num_box_params == 6:
                 # no angle. this will be learned separately if with_angle is true
                 enc_boxes = enc_tight_boxes[:, :6]
                 dec_boxes = dec_tight_boxes[:, :6]
-            elif args.num_box_params == 4:
-                # height, centroid. assuming we want the other sizes to be estimated from the shape aspect ratio
-                enc_boxes = enc_tight_boxes[:, 2:6]
-                dec_boxes = dec_tight_boxes[:, 2:6]
             else:
                 raise NotImplementedError
 
             # limit the angle bin range from 0 to 24
-            enc_angles = enc_tight_boxes[:, 6].long() - 1
-            enc_angles = torch.where(enc_angles > 0, enc_angles, torch.zeros_like(enc_angles))
-            enc_angles = torch.where(enc_angles < 24, enc_angles, torch.zeros_like(enc_angles))
-            dec_angles = dec_tight_boxes[:, 6].long() - 1
-            dec_angles = torch.where(dec_angles > 0, dec_angles, torch.zeros_like(dec_angles))
-            dec_angles = torch.where(dec_angles < 24, dec_angles, torch.zeros_like(dec_angles))
+            enc_angles = None#enc_tight_boxes[:, 6].long() - 1
+            """ enc_angles = torch.where(enc_angles > 0, enc_angles, torch.zeros_like(enc_angles))
+            enc_angles = torch.where(enc_angles < 24, enc_angles, torch.zeros_like(enc_angles)) """
+            dec_angles = None#dec_tight_boxes[:, 6].long() - 1
+            """ dec_angles = torch.where(dec_angles > 0, dec_angles, torch.zeros_like(dec_angles))
+            dec_angles = torch.where(dec_angles < 24, dec_angles, torch.zeros_like(dec_angles)) """
 
             attributes = None
 
@@ -279,52 +271,27 @@ def train():
             loss_genShapeFake = 0
             loss_shape_fake_g = 0
 
-            if args.with_manipulator:
-                model_out = model.forward_mani(enc_objs, enc_triples, enc_boxes, enc_angles, encoded_enc_points, attributes, enc_objs_to_scene,
-                                                   dec_objs, dec_triples, dec_boxes, dec_angles, encoded_dec_points, attributes, dec_objs_to_scene,
-                                                   missing_nodes, manipulated_nodes)
 
-                mu_box, logvar_box, mu_shape, logvar_shape, orig_gt_box, orig_gt_angle, orig_gt_shape, orig_box, orig_angle, orig_shape, \
-                dec_man_enc_box_pred, dec_man_enc_angle_pred, dec_man_enc_shape_pred, keep = model_out
-            else:
-                model_out = model.forward_no_mani(dec_objs, dec_triples, dec_boxes, encoded_dec_points, angles=dec_angles,
-                                      attributes=attributes)
 
-                mu_box, logvar_box, mu_shape, logvar_shape, dec_man_enc_box_pred, dec_man_encd_angles_pred, \
-                  dec_man_enc_shape_pred = model_out
+            model_out = model.forward_no_mani(dec_objs, dec_triples, dec_boxes, encoded_dec_points, angles=dec_angles,
+                                    attributes=attributes)
 
-                orig_gt_box = dec_boxes
-                orig_box = dec_man_enc_box_pred
+            mu_box, logvar_box, mu_shape, logvar_shape, dec_man_enc_box_pred, dec_man_encd_angles_pred, \
+                dec_man_enc_shape_pred = model_out
 
-                orig_gt_shape = encoded_dec_points
-                orig_shape = dec_man_enc_shape_pred
+            orig_gt_box = dec_boxes
+            orig_box = dec_man_enc_box_pred
 
-                orig_angle = dec_man_encd_angles_pred
-                orig_gt_angle = dec_angles
+            orig_gt_shape = encoded_dec_points
+            orig_shape = dec_man_enc_shape_pred
 
-                keep = []
-                for i in range(len(dec_man_enc_box_pred)):
-                    keep.append(1)
-                keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
+            orig_angle = dec_man_encd_angles_pred
+            orig_gt_angle = dec_angles
 
-            if args.with_manipulator and args.with_shape_disc and dec_man_enc_shape_pred is not None:
-                shape_logits_fake_d, probs_fake_d = shapeClassifier(dec_man_enc_shape_pred[mask].detach())
-                shape_logits_fake_g, probs_fake_g = shapeClassifier(dec_man_enc_shape_pred[mask])
-                shape_logits_real, probs_real = shapeClassifier(encoded_dec_points[mask].detach())
-
-                # auxiliary loss. can the discriminator predict the correct class for the generated shape?
-                loss_shape_real = torch.nn.functional.cross_entropy(shape_logits_real, dec_objs[mask])
-                loss_shape_fake_d = torch.nn.functional.cross_entropy(shape_logits_fake_d, dec_objs[mask])
-                loss_shape_fake_g = torch.nn.functional.cross_entropy(shape_logits_fake_g, dec_objs[mask])
-                # standard discriminator loss
-                loss_genShapeFake = bce_loss(probs_fake_g, torch.ones_like(probs_fake_g))
-                loss_dShapereal = bce_loss(probs_real, torch.ones_like(probs_real))
-                loss_dShapefake = bce_loss(probs_fake_d, torch.zeros_like(probs_fake_d))
-
-                loss_dShape = loss_dShapefake + loss_dShapereal + loss_shape_real + loss_shape_fake_d
-                loss_genShape = loss_genShapeFake + loss_shape_fake_g
-                loss_dShape.backward()
-                optimizerShapeAux.step()
+            keep = []
+            for i in range(len(dec_man_enc_box_pred)):
+                keep.append(1)
+            keep = torch.from_numpy(np.asarray(keep).reshape(-1, 1)).float().cuda()
 
             vae_loss_box, vae_losses_box = calculate_model_losses(args,
                                                                     orig_gt_box,
@@ -342,6 +309,7 @@ def train():
             else:
                 # set shape loss to 0 if we are only predicting layout
                 vae_loss_shape, vae_losses_shape = 0, 0
+                raise ValueError("dec_man_enc_shape_pred shouldn't be None")
 
             if args.with_manipulator and args.with_changes:
                 oriented_gt_boxes = torch.cat([dec_boxes], dim=1)
@@ -379,8 +347,8 @@ def train():
                 optimizerDbox.step()
 
             loss = vae_loss_box + vae_loss_shape + 0.1 * loss_genShape
-            if args.with_changes:
-                   loss = loss + args.weight_D_box * boxGloss #+ b_loss
+            #if args.with_changes:
+            #       loss = loss + args.weight_D_box * boxGloss #+ b_loss
 
             # optimize
             loss.backward()
@@ -397,14 +365,10 @@ def train():
             optimizer.step()
             counter += 1
 
-            if counter % 100 == 0:
-                print("loss at {}: box {:.4f}\tshape {:.4f}\tdiscr RealFake {:.4f}\t discr Classifcation "
-                      "{:.4f}".format(counter, vae_loss_box, vae_loss_shape, loss_genShapeFake,
-                                                              loss_shape_fake_g))
+            if counter:#counter % 10 == 0:
+                print("loss at {}: box {:.4f}\tshape {:.4f}".format(counter, vae_loss_box, vae_loss_shape))
             writer.add_scalar('Train Loss BBox', vae_loss_box, counter)
             writer.add_scalar('Train Loss Shape', vae_loss_shape, counter)
-            writer.add_scalar('Train Loss loss_genShapeFake', loss_genShapeFake, counter)
-            writer.add_scalar('Train Loss loss_shape_fake_g', loss_shape_fake_g, counter)
 
         if epoch % 5 == 0:
             model.save(args.exp, args.outf, epoch)

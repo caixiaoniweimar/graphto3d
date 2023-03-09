@@ -129,31 +129,27 @@ def get_points_instances_from_mesh(file, labelName2InstanceId):
     Input: file: e.g. .../7b4acb843fd4b0b335836c728d324152_0001_5_scene-X-bowl-X_mid.obj 
            labelName2InstanceId { "cup_1":50 ....}
     Output: vertices(num_of_vertices,3); instance(num_of_vertices, ) """    
-    points = np.empty((0, 3))
-    instances = np.empty((0, ))
+    points_list = []
+    instances_list = []
     with open(file, 'r') as f:
         for line in f:
             if line.startswith('o'):
                 label_name = line.strip()[2:]
-                instance_id = int(labelName2InstanceId[label_name])
+                instance_id = labelName2InstanceId[label_name]
             elif line.startswith('v'):
                 vertex = list(map(float, line.split()[1:]))
-                if len(vertex)==3:
-                    #若vertex已经在points中, 需要检查拥有该vertex的instance_id是否相同
-                    if vertex in points:
-                        addVertex = True
-                        indices = np.where( (points == vertex).all(axis=1))[0]
-                        for index in indices:
-                            if instances[index] == instance_id: #相同instance_id的vertex已经有了
-                                addVertex = False
-                                break #退出循环
-                        if addVertex:
-                            points = np.append(points, np.array([vertex]), axis=0) #! 一一对应
-                            instances=np.append(instances, instance_id)
-                    else:
-                        points = np.append(points, np.array([vertex]), axis=0) #! 一一对应
-                        instances=np.append(instances, instance_id)
+                if len(vertex) == 3:
+                    points_list.append(vertex)
+                    instances_list.append(instance_id)
 
-    assert(points.shape[1]==3)
-    assert(instances.ndim ==1)
+    points = np.array(points_list)
+    instances = np.array(instances_list)
+    # Get the unique rows and their corresponding indices
+    unique_rows, indices = np.unique(points, axis=0, return_index=True)
+    
+    # Update instances_list to remove instances corresponding to duplicate points
+    instances = np.array(instances)[indices]
+
+    # Update points_list to contain only unique points
+    points = np.array([list(row) for row in unique_rows])
     return points, instances

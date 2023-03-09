@@ -110,6 +110,8 @@ class GraphTripleConv(nn.Module):
         self.net1 = build_mlp(net1_layers, batch_norm=mlp_normalization)
         self.net1.apply(_init_weights)
 
+
+
         net2_layers = [hidden_dim, hidden_dim, output_dim]
         self.net2 = build_mlp(net2_layers, batch_norm=mlp_normalization)
         self.net2.apply(_init_weights)
@@ -143,13 +145,22 @@ class GraphTripleConv(nn.Module):
         o_idx = edges[:, 1].contiguous()
 
         # Get current vectors for subjects and objects; these have shape (num_triples, Din)
-        cur_s_vecs = obj_vecs[s_idx]
-        cur_o_vecs = obj_vecs[o_idx]
+        cur_s_vecs = obj_vecs[s_idx]  #[338, 256]
+        cur_o_vecs = obj_vecs[o_idx]  #[338, 256]
+        #print(f"Shape: {cur_s_vecs.shape}, {cur_o_vecs.shape}")
 
         # Get current vectors for triples; shape is (num_triples, 3 * Din)
         # Pass through net1 to get new triple vecs; shape is (num_triples, 2 * H + Dout)
+        #print(f"Graph.py num_triples: {num_triples}")
         cur_t_vecs = torch.cat([cur_s_vecs, pred_vecs, cur_o_vecs], dim=1)
+        #print(f"cur_t_vecs: {cur_s_vecs.shape}, {pred_vecs.shape}, {cur_o_vecs.shape}, {cur_t_vecs.shape}")
+        """ for i, layer in enumerate(self.net1):
+            if hasattr(layer, 'weight'):
+                print(f'Layer {i} weight shape: {layer.weight.shape}') """
+        #print(self.net1)
+        #print("Number of parameters:", sum(p.numel() for p in self.net1.parameters() if p.requires_grad))
         new_t_vecs = self.net1(cur_t_vecs)
+        #print(f"new_t_vecs: {new_t_vecs.shape}")
 
         # Break apart into new s, p, and o vecs; s and o vecs have shape (num_triples, H) and
         # p vecs have shape (num_triples, Dout)

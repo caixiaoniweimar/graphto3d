@@ -84,6 +84,7 @@ class VAE(nn.Module):
             return None, None, None, None, None, None, None, None, None, None, None
 
     def forward_no_mani(self, objs, triples, boxes, shapes, angles=None, attributes=None):
+        angles=None
 
         (mu_boxes, logvar_boxes), (mu_shapes, logvar_shapes) = self.encode_box_and_shape(objs, triples, shapes, boxes,
                                                                                 angles=angles, attributes=attributes)
@@ -224,8 +225,8 @@ class VAE(nn.Module):
 
     def decoder_boxes_and_shape(self, z_box, z_shape, objs, triples, attributes, atlas=None):
         angles = None
-        if self.type_ == 'shared':
-            boxes, angles, feats = self.vae.decoder(z_box, objs, triples, attributes)
+        if self.type_ == 'shared':#! 本来第二个参数为angles, 现在删除掉
+            boxes, feats = self.vae.decoder(z_box, objs, triples, attributes)
             points = atlas.forward_inference_from_latent_space(feats, atlas.get_grid()) if atlas is not None else feats
         elif self.type_ == 'dis' or self.type_ == 'mlp':
             boxes, angles = self.decoder_boxes(z_box, objs, triples, attributes)

@@ -201,12 +201,8 @@ class Sg2ScVAEModel(nn.Module):
 
         boxes_vecs = self.box_embeddings(boxes_gt)
 
-        if self.use_angles:
-            angle_vecs = self.angle_embeddings(angles_gt)
-            obj_vecs_box = torch.cat([obj_vecs_box, boxes_vecs, angle_vecs], dim=1)
-        else:
-            obj_vecs_box = torch.cat([obj_vecs_box, boxes_vecs], dim=1)
 
+        obj_vecs_box = torch.cat([obj_vecs_box, boxes_vecs], dim=1)
         obj_vecs_shape = torch.cat([obj_vecs_shape, shape_vecs], dim=1)
 
         if self.gconv_net_ec_box is not None:
@@ -299,11 +295,7 @@ class Sg2ScVAEModel(nn.Module):
         boxes_pred = self.box_net(obj_vecs_box)
         shapes_pred = self.shape_net(obj_vecs_shape)
 
-        if self.use_angles:
-            angles_pred = F.log_softmax(self.angle_net(obj_vecs_box), dim=1)
-            return boxes_pred, angles_pred, shapes_pred
-        else:
-            return boxes_pred, shapes_pred
+        return boxes_pred, shapes_pred
 
     def decoder_with_changes(self, z, dec_objs, dec_triples, attributes, missing_nodes, manipulated_nodes):
         # append zero nodes
