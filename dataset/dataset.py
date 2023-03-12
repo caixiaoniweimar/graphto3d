@@ -21,7 +21,7 @@ class RIODatasetSceneGraph(data.Dataset):
                  pass_scan_id=False, use_points=True,
                  use_scene_rels=False, data_len=None,
                  with_changes=True, vae_baseline=False,
-                 scale_func='diag', eval=False, eval_type='none',
+                 scale_func='diag', eval=False, eval_type='addition',
                  atlas=None, path2atlas=None, with_feats=False,
                  seed=True, use_splits=False, large=False,
                  use_rio27=False, recompute_feats=False, use_canonical=False,
@@ -62,20 +62,24 @@ class RIODatasetSceneGraph(data.Dataset):
 
         self.fm = FreeMemLinux('GB')
         self.vocab = {}
-        with open(os.path.join(self.root, 'classes.txt'), "r") as f:
+        with open(os.path.join(self.root, 'classes.txt'), "r") as f:#! 包含所有的class, 包括_scene_
             self.vocab['object_idx_to_name'] = f.readlines()
-        with open(os.path.join(self.root, 'relationships.txt'), "r") as f:
+        with open(os.path.join(self.root, 'relationships.txt'), "r") as f:#! 包含所有的relationship, 包括none
             self.vocab['pred_idx_to_name'] = f.readlines()
+        #! {'object_idx_to_name': ['_scene_\n', 'fork\n', 'knife\n', 'tablespoon\n', 'teaspoon\n', 'plate\n', 'bowl\n', 'cup\n', 'teapot\n', 'pitcher\n', 'can\n', 'box\n', 'obstacle\n', 'support_table'], 
+        #! 'pred_idx_to_name': ['none\n', 'left\n', 'right\n', 'front\n', 'behind\n', 'close by\n', 'standing on\n', 'lying on\n', 'lying in\n', 'symmetrical to']}
 
+        #! 自己添加 class_choice 不包含obstacle
+        class_choice = ['fork', 'knife', 'tablespoon','teaspoon', 'plate', 'bowl', 'cup', 'teapot', 'pitcher', 'can', 'box', 'support_table'] 
         splitfile = os.path.join(self.root, '{}.txt'.format(split))
 
         filelist = open(splitfile, "r").read().splitlines()
-        self.filelist = [file.rstrip() for file in filelist] #? 包含对应type的所有scene_names
+        self.filelist = [file.rstrip() for file in filelist] #!包含对应type(train/validation)的所有scene_names
         # list of relationship categories
-        self.relationships = self.read_relationships(os.path.join(self.root, 'relationships.txt'))#?所有的relationship名称
+        self.relationships = self.read_relationships(os.path.join(self.root, 'relationships.txt'))#!所有的relationship名称, 包括none
 
         # uses scene sections of up to 9 objects (from 3DSSG) if true, and full scenes otherwise
-        self.use_splits = use_splits
+        self.use_splits = use_splits #! False
         if split == 'train_scenes': # training set
             splits_fname = 'relationships_train'
             self.rel_json_file = os.path.join(self.root, '{}.json'.format(splits_fname))
@@ -104,36 +108,27 @@ class RIODatasetSceneGraph(data.Dataset):
 
         # option to map object classes to a smaller class set from 3RScan
         # not used in the current paper results
-        self.use_rio27 = use_rio27
+        self.use_rio27 = use_rio27#! False
 
         with open(self.catfile, 'r') as f:
             for line in f:
                 category = line.rstrip()
                 self.cat[category] = category
-        if not class_choice is None:
-            self.cat = {k: v for k, v in self.cat.items() if k in class_choice}
-            raise ValueError("class_choice should be None!")
+        self.classes = dict(zip(self.cat, range(len(self.cat))))
+        #self.classes = dict(zip(sorted(self.cat), range(len(self.cat))))
+        
+        if not class_choice is None: #! 不包括obstacle
+            self.cat =     {k: v for k, v in self.cat.items() if k in class_choice}
+            self.classes = {k:v for k,v in self.classes.items() if k in class_choice}
+        print(f"122 - {self.classes}")
+        print(f"123 - {self.cat}")
 
-        self.classes = dict(zip(sorted(self.cat), range(len(self.cat))))
+        #! cat: {'fork': 'fork', 'knife': 'knife', 'tablespoon': 'tablespoon', 'teaspoon': 'teaspoon', 'plate': 'plate', 'bowl': 'bowl', 'cup': 'cup', 'teapot': 'teapot', 'pitcher': 'pitcher', 'can': 'can', 'box': 'box', 'support_table': 'support_table'}
+        #! classes: {'fork': 1, 'knife': 2, 'tablespoon': 3, 'teaspoon': 4, 'plate': 5, 'bowl': 6, 'cup': 7, 'teapot': 8, 'pitcher': 9, 'can': 10, 'box': 11, 'support_table': 13}
 
-        # we had to discard some underrepresented classes for the shape generation
-        # either not part of shapenet, or limited and low quality samples in 3rscan
-        if not large: #large=False进入
-            points_classes = ['fork', 'knife', 'tablespoon','teaspoon', 'plate', 'bowl', 'cup', 'teapot', 'pitcher', 'can', 'box','obstacle', 'support_table']
+        self.point_classes_idx = list(self.classes.values()) +[0]#! [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 0]
 
-        points_classes_idx = []
-        for pc in points_classes:
-            if class_choice is not None:
-                if pc in self.classes:
-                    points_classes_idx.append(self.classes[pc])
-                else:
-                    points_classes_idx.append(0)
-                raise ValueError("class_choice should be None!")
-            else:
-                points_classes_idx.append(self.classes[pc])
-
-        self.point_classes_idx = points_classes_idx + [0]
-        self.sorted_cat_list = sorted(self.cat)
+        self.sorted_cat_list = list(self.cat.keys()) #!不要sorted
         self.files = {}
         self.eval_type = eval_type
 
@@ -223,17 +218,20 @@ class RIODatasetSceneGraph(data.Dataset):
             else:
                 # get center from box center if available
                 mean = torch.from_numpy(params7[3:6].astype("float32"))
-            p -= mean.unsqueeze(0)
-        if rotation and params7 is not None:
+            p -= mean.unsqueeze(0)#!将点云数据p中心化到原点，即每个点减去所有点的平均值
+        if rotation and params7 is not None: #! 不进入
+            #? params7中保存的旋转角度，对点云数据p进行旋转
             p = (torch.from_numpy(get_rotation(-params7[-1], degree=False).astype("float32")) @ p.T).T
         if scale and params7 is not None:
             # first if needed rotate to canonical rotation
             # apply scaling
             # if needed rotate back
-            if not rotation and len(params7)>6:#将点集 p 绕着 $z$ 轴逆时针旋转了 -params7[-1] 度
+            if not rotation and len(params7)>6:#将点集 p 绕着z轴逆时针旋转了 -params7[-1] 度
                 p = (torch.from_numpy(get_rotation(-params7[-1], degree=False).astype("float32")) @ p.T).T
                 raise ValueError("len(params7) should only be 6 without degree")
+            #! 这是因为在缩放点云时，先旋转到标准朝向进行缩放可以保证缩放后点云的大小与形状保持不变。
             if scale_func == 'diag':
+                #! 将点云数据p进行缩放，缩放比例由params7中的尺寸信息确定
                 # OPTION 1: normalize diagonal = 1
                 norm2 = np.linalg.norm(params7[:3].astype("float32"))
                 p /= norm2
@@ -242,29 +240,32 @@ class RIODatasetSceneGraph(data.Dataset):
                 norm2 = torch.from_numpy(params7[:3].astype("float32")).reshape(1, 3)
                 min_p = p.min(0)[0]
                 p = ((p - min_p) / norm2) * 2. - 1.  # between -1 and 1 in all directions
+                raise ValueError("scale_func should not be whl")
             elif scale_func == 'whl_after':
                 norm2 = p.max(0)[0] - p.min(0)[0]
                 min_p = p.min(0)[0]
                 p = ((p - min_p) / norm2) * 2. - 1.  # between -1 and 1 in all directions
+                raise ValueError("scale_func should not be whl_after")
             else:
                 raise NotImplementedError
-            if not rotation and len(params7)>6: #将点集 p 绕着 $z$ 轴顺时针旋转了 params7[-1] 度
+            if not rotation and len(params7)>6: #将点集 p 绕着z轴顺时针旋转了 params7[-1] 度
                 p = (torch.from_numpy(get_rotation(params7[-1], degree=False).astype("float32")) @ p.T).T
                 raise ValueError("len(params7) should only be 6 without degree")
         return p
 
     def __getitem__(self, index):
         scene_id = self.scans[index]
-        #print(f"Current working on {scene_id}")
+        print(f"Current working on {scene_id}")
         #root_raw: ..../test_pipeline_dataset/raw/{table_id}/{scene_id}.obj
         file = os.path.join(self.root_raw, scene_id.split('_')[0], scene_id+self.label_file)
         if not os.path.exists(file):
             raise FileNotFoundError(f"Cannot find {scene_id}.obj file. Path: {file}")
 
-        # instance2label, e.g. {1: 'floor', 2: 'wall', 3: 'picture', 4: 'picture'}
-        labelName2InstanceId, instance2label = util.get_label_name_to_global_id(file)
-        selected_instances = list(self.objs_json[scene_id].keys())
-        keys = list(instance2label.keys())
+        # labelName2InstanceId, e.g. {'cup_7': 37, 'bowl_3': 20, 'plate_10': 14, '7b4acb843fd4b0b335836c728d324152_support_table': 117}
+        # instanceId2class {37: 'cup', 20: 'bowl', 14: 'plate', 117: 'support_table'}
+        labelName2InstanceId, instanceId2class = util.get_label_name_to_global_id(file)
+        selected_instances = list(self.objs_json[scene_id].keys())#! all instance_ids 与下行的keys相同
+        keys = list(instanceId2class.keys()) #! all instance_ids
 
         if self.shuffle_objs:
             random.shuffle(keys)
@@ -274,16 +275,9 @@ class RIODatasetSceneGraph(data.Dataset):
             _, atlasname = os.path.split(self.path2atlas)
             atlasname = atlasname.split('.')[0]
 
-            if not self.large:#! 进入 因为large=False
-                feats_path = os.path.join(self.root_raw, scene_id.split('_')[0],
-                                          '{}_small_{}_{}.pkl'.format(atlasname,
-                                                                      'splits' if self.use_splits else 'merged',
-                                                                      scene_id))
-            else:
-                feats_path = os.path.join(self.root_raw, scene_id.split('_')[0],
-                                          '{}_large_{}_{}.pkl'.format(atlasname,
-                                                                      'splits' if self.use_splits else 'merged',
-                                                                      scene_id))
+
+            feats_path = os.path.join(self.root_raw, scene_id.split('_')[0], '{}_{}_{}.pkl'.format(atlasname,'features',scene_id))
+
             if self.recompute_feats:
                 feats_path += 'tmp'
         # Load points if with features but features cannot be found or are forced to be recomputed
@@ -292,39 +286,41 @@ class RIODatasetSceneGraph(data.Dataset):
             if file in self.files: # Caching
                 (points, instances) = self.files[file]
             else:
-                points, instances = util.get_points_instances_from_mesh(file, labelName2InstanceId)
+                points, instances = util.get_points_instances_from_mesh(file, labelName2InstanceId)#! points: 所有的vertices, instances: 对应的instance_id(global_id)
 
                 if self.fm.user_free > 5:
                     self.files[file] = (points, instances)
 
         instance2mask = {}
-        instance2mask[0] = 0
+        instance2mask[0] = 0 
 
-        cat = []
+        cat = [] #! 存储当前scene, 存在的class_id
         tight_boxes = []
 
         counter = 0
 
-        instances_order = []
+        instances_order = []#! 添加instance_id
         selected_shapes = []
 
-        for key in keys: #{'1', 2}
+        #!self.classes: {'fork': 1, 'knife': 2, 'tablespoon': 3, 'teaspoon': 4, 'plate': 5, 'bowl': 6, 'cup': 7, 'teapot': 8, 'pitcher': 9, 'can': 10, 'box': 11, 'support_table': 13}
+        for key in keys: #! 所有的instance_ids e.g., [37,20,14,117]
             # get objects from the selected list of classes of 3dssg
-            scene_instance_id = key
-            scene_instance_class = instance2label[key]
+            scene_instance_id = key #37
+            scene_instance_class = instanceId2class[key] #cup
             scene_class_id = -1
             if scene_instance_class in self.classes:
-                scene_class_id = self.classes[scene_instance_class]
+                scene_class_id = self.classes[scene_instance_class] #cup的clas_id -> 7
             
-            if scene_class_id != -1 and key in selected_instances:
-                instance2mask[scene_instance_id] = counter + 1
+            if scene_class_id != -1 and key in selected_instances: #selected_instances与keys相同, 所以一定进入
+                instance2mask[scene_instance_id] = counter + 1 #
                 counter += 1
             else:#! scene_class_id == -1 -> 不存在self.classes中
                 print(key, selected_instances)
                 instance2mask[scene_instance_id] = 0
                 raise ValueError("scene_class_id should not be -1.")
+            
             # mask to cat:
-            if (scene_class_id >= 0) and (scene_instance_id > 0) and (key in selected_instances):
+            if (scene_class_id >= 0) and (scene_instance_id > 0) and (key in selected_instances):#! 一定进入
                 if self.use_canonical:#! 不进入
                     direction = self.tight_boxes_json[scene_id][key]['direction']
                     if direction in [-1, 0, 6]:
@@ -349,6 +345,9 @@ class RIODatasetSceneGraph(data.Dataset):
                 if not self.vae_baseline:#!network_type==shared!=sln则进入
                     bbox = normalize_box_params(bbox)
                 tight_boxes.append(bbox)
+        
+        #! instance2mask: {0: 0, 40: 1, 31: 2, 25: 3, 7: 4, 117: 5}
+
         if self.with_feats:
             # If precomputed features exist, we simply load them
             if os.path.exists(feats_path):
@@ -362,15 +361,16 @@ class RIODatasetSceneGraph(data.Dataset):
                     ordered_feats.append(feats_in[:-1][feats_in_instance])
                 ordered_feats.append(np.zeros([1, feats_in.shape[1]]))
                 feats_in = list(np.concatenate(ordered_feats, axis=0))
+
         # Sampling of points from object if they are loaded
         if (self.with_feats and (not os.path.exists(feats_path) or feats_in is None)) or self.use_points:
             masks = np.array(list(map(lambda l: instance2mask[l] if l in instance2mask.keys() else 0, instances)),
-                             dtype=np.int32)
+                             dtype=np.int32) #! instanceid 映射到 maskid
             num_pointsets = len(cat) + int(self.use_scene_rels)  # add zeros for the scene node
             obj_points = torch.zeros([num_pointsets, self.npoints, 3])
 
-            for i in range(len(cat)):
-                obj_pointset = points[np.where(masks == i + 1)[0], :]
+            for i in range(len(cat)):#! 当前scene中存在的class_id
+                obj_pointset = points[np.where(masks == i + 1)[0], :] #! 根据mask_id获取对应class的point
 
                 if len(obj_pointset) >= self.npoints:
                     choice = np.random.choice(len(obj_pointset), self.npoints, replace=False)
@@ -398,18 +398,18 @@ class RIODatasetSceneGraph(data.Dataset):
         rel_json = self.relationship_json[scene_id]
 
         for r in rel_json: # create relationship triplets from data
-            if r[0] in instance2mask.keys() and r[1] in instance2mask.keys():
-                subject = instance2mask[r[0]] - 1
-                object = instance2mask[r[1]] - 1
-                predicate = r[2] + 1
+            if r[0] in instance2mask.keys() and r[1] in instance2mask.keys():  #r[0], r[1] -> instance_id
+                subject = instance2mask[r[0]]-1 #! 对应的mask_id -1, 因为obj_points[i] = obj_pointset, 这里i从0开始
+                object = instance2mask[r[1]]-1
+                predicate = r[2] #! 修改！！！:我们的GT predicate不需要+1, predicate left都是从1开始的
                 if subject >= 0 and object >= 0:
                     triples.append([subject, predicate, object])
             else:
                 continue     
         if self.use_scene_rels:
             # add _scene_ object and _in_scene_ connections
-            scene_idx = len(cat)
-            for i, ob in enumerate(cat):
+            scene_idx = len(cat) #4
+            for i, ob in enumerate(cat): #!当前scene中的class_id(从0开始), 都和scene_idx(_scene_ object),有predicate-0: _in_scene_
                 triples.append([i, 0, scene_idx])
             cat.append(0)
             # dummy scene box
@@ -427,7 +427,7 @@ class RIODatasetSceneGraph(data.Dataset):
 
             feats_out = {}
             feats_out['feats'] = feats
-            feats_out['instance_order'] = instances_order
+            feats_out['instance_order'] = instances_order#! instances_id
             feats_in = list(feats)
 
             assert self.path2atlas is not None
@@ -438,8 +438,8 @@ class RIODatasetSceneGraph(data.Dataset):
             pickle.dump(feats_out, open(path, 'wb'))
         # prepare outputs
         output['encoder'] = {}
-        output['encoder']['objs'] = cat
-        output['encoder']['triples'] = triples
+        output['encoder']['objs'] = cat#! 当前scene所有的class_id + _scene_(0)
+        output['encoder']['triples'] = triples#! triples中的边id: mask_id - 1
         output['encoder']['boxes'] = tight_boxes
         if self.use_points:
             output['encoder']['points'] = list(obj_points.numpy())
@@ -451,11 +451,27 @@ class RIODatasetSceneGraph(data.Dataset):
         if not self.with_changes:
             output['manipulate']['type'] = 'none'
             output['decoder'] = copy.deepcopy(output['encoder'])
-        else:
-            if not self.eval:#! 进入 因为self.eval=False
-                output['manipulate']['type'] = 'none'
+        else:#! 进入
+            if not self.eval:#! eval=False进入
+                if self.with_changes:
+                    output['manipulate']['type'] = ['relationship', 'addition', 'none'][
+                        np.random.randint(3)]  # removal is trivial - so only addition and rel change
+                else:
+                    output['manipulate']['type'] = 'none'
                 output['decoder'] = copy.deepcopy(output['encoder'])
-            else:#!X
+                if output['manipulate']['type'] == 'addition':
+                    node_id = self.remove_node_and_relationship(output['encoder'])
+                    if node_id >= 0:
+                        output['manipulate']['added'] = node_id
+                    else:
+                        output['manipulate']['type'] = 'none'
+                elif output['manipulate']['type'] == 'relationship':
+                    rel, pair, suc = self.modify_relship(output['decoder'])
+                    if suc:
+                        output['manipulate']['relship'] = (rel, pair)
+                    else:
+                        output['manipulate']['type'] = 'none'
+            else:
                 output['manipulate']['type'] = self.eval_type
                 output['decoder'] = copy.deepcopy(output['encoder'])
                 if output['manipulate']['type'] == 'addition':
@@ -499,28 +515,35 @@ class RIODatasetSceneGraph(data.Dataset):
 
         :param graph: dict containing objects, features, boxes, points and relationship triplets
         :return: index of the removed node
+        具体实现是在函数中随机选择一个节点，并检查是否为特定的一些节点（在excluded列表中定义），
+        如果是则重新选择。然后从图中删除该节点以及与它相连的关系，以及与节点相关的信息，如包围盒、特征和点云。
+        最后，更新剩余节点的编号以确保它们在图中的顺序正确。函数返回被删除节点的索引。
+        这个函数的目的是模拟模型在遇到图中物体被遮挡、丢失或者错误的情况下的行为，从而提高模型的鲁棒性和泛化能力。
         """
+        
 
         node_id = -1
-        # dont remove layout components, like floor. those are essential
-        if not self.use_rio27:
-            excluded = [27, 58, 155]
-        else:
-            excluded = [1, 2, 15]
+        # dont remove layout components, like floor. those are essential -> #? 在我们的情况应该是support_table
+        excluded = [13]
         trials = 0
+        #! {graph['objs']} = [6, 13, 9, 8, 3, 0]
+        #node-id: 在上方array的id
+        #print(f"528 - {graph['objs']}")
         while node_id < 0 or graph['objs'][node_id] in excluded:
             if trials > 100:
                 return -1
             trials += 1
-            node_id = np.random.randint(len(graph['objs']) - 1)
+            node_id = np.random.randint(len(graph['objs']) - 1)#! -1: 不包括最后一个_scene_(id=0)
 
         graph['objs'].pop(node_id)
+        #print(f"536 - {node_id}, {len(graph['feats'])}")
         if self.use_points:
             graph['points'].pop(node_id)
         if self.with_feats:
             graph['feats'].pop(node_id)
         graph['boxes'].pop(node_id)
 
+        #print(f"536 - {graph['triples']}")
         to_rm = []
         for x in graph['triples']:
             sub, pred, obj = x
@@ -539,7 +562,7 @@ class RIODatasetSceneGraph(data.Dataset):
 
         return node_id
 
-    def modify_relship(self, graph, interpretable=False):
+    def modify_relship(self, graph, interpretable=True):
         """ Change a relationship type in a graph
 
         :param graph: dict containing objects, features, boxes, points and relationship triplets
@@ -554,8 +577,9 @@ class RIODatasetSceneGraph(data.Dataset):
          '8 bigger than' '7 inside' '6 close by' '5 behind' '4 front' '3 right' '2 left' '1 supported by'
          '0: none'''
         # subset of edge labels that are spatially interpretable (evaluatable via geometric contraints)
-        interpretable_rels = [2, 3, 4, 5, 8, 9, 10, 11]
+        interpretable_rels = [1,2,3,4] #! 修改！！！只更改上下左右 #[2, 3, 4, 5, 8, 9, 10, 11]
         inside_rel = [7, 22, 23, 24, 25, 26]
+        
         # arm chair, basked, bathtub, bidet, bookshelf, box, chair,  commode, cupboard, trash bin, kettle, shelf,
         # wardrobe, sink
         inside_obj = [1, 7, 9, 13, 20, 22, 28, 37, 43, 67, 74, 119, 129, 156]
@@ -568,8 +592,8 @@ class RIODatasetSceneGraph(data.Dataset):
 
         did_change = False
         trials = 0
-        excluded = [27]
-        eval_excluded = [27, 58, 155]
+        excluded = [13]#! 修改 不动桌子[27]
+        eval_excluded = [13]#! 修改 不动桌子[27, 58, 155]
 
         while not did_change and trials < 1000:
             idx = np.random.randint(len(graph['triples']))
@@ -581,12 +605,12 @@ class RIODatasetSceneGraph(data.Dataset):
             if graph['objs'][obj] in excluded or graph['objs'][sub] in excluded:
                 continue
             # sub_cl, obj_cl = graph['objs'][sub], graph['objs'][obj]
-            if interpretable:
-                if graph['objs'][obj] in eval_excluded or graph['objs'][sub] in eval_excluded: # don't use the floor
-                    continue
-                new_pred = interpretable_rels[np.random.randint(1, len(interpretable_rels))]
-            else:
-                new_pred = np.random.randint(1, 27)
+            #if interpretable:
+            if graph['objs'][obj] in eval_excluded or graph['objs'][sub] in eval_excluded: # don't use the floor
+                continue
+            new_pred = interpretable_rels[np.random.randint(1, len(interpretable_rels))]
+            #else:
+            #    new_pred = np.random.randint(1, 27)
 
             graph['triples'][idx][1] = new_pred
             did_change = True
