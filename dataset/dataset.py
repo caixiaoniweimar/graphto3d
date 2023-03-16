@@ -69,8 +69,6 @@ class RIODatasetSceneGraph(data.Dataset):
         #! {'object_idx_to_name': ['_scene_\n', 'fork\n', 'knife\n', 'tablespoon\n', 'teaspoon\n', 'plate\n', 'bowl\n', 'cup\n', 'teapot\n', 'pitcher\n', 'can\n', 'box\n', 'obstacle\n', 'support_table'], 
         #! 'pred_idx_to_name': ['none\n', 'left\n', 'right\n', 'front\n', 'behind\n', 'close by\n', 'standing on\n', 'lying on\n', 'lying in\n', 'symmetrical to']}
 
-        #! 自己添加 class_choice 不包含obstacle
-        class_choice = ['fork', 'knife', 'tablespoon','teaspoon', 'plate', 'bowl', 'cup', 'teapot', 'pitcher', 'can', 'box', 'support_table'] 
         splitfile = os.path.join(self.root, '{}.txt'.format(split))
 
         filelist = open(splitfile, "r").read().splitlines()
@@ -113,22 +111,33 @@ class RIODatasetSceneGraph(data.Dataset):
         with open(self.catfile, 'r') as f:
             for line in f:
                 category = line.rstrip()
+                #if category!="obstacle":
                 self.cat[category] = category
-        self.classes = dict(zip(self.cat, range(len(self.cat))))
-        #self.classes = dict(zip(sorted(self.cat), range(len(self.cat))))
+        #! cat: {'_scene_': '_scene_', 'bowl': 'bowl', 'box': 'box', 'can': 'can', 'cup': 'cup', 'fork': 'fork', 'knife': 'knife', 'pitcher': 'pitcher', 'plate': 'plate', 'support_table': 'support_table', 'tablespoon': 'tablespoon', 'teapot': 'teapot', 'teaspoon': 'teaspoon', 'obstacle': 'obstacle'}
+        if not class_choice is None:#! 不进入
+            self.cat = {k: v for k, v in self.cat.items() if k in class_choice}
         
-        if not class_choice is None: #! 不包括obstacle
-            self.cat =     {k: v for k, v in self.cat.items() if k in class_choice}
-            self.classes = {k:v for k,v in self.classes.items() if k in class_choice}
-        print(f"122 - {self.classes}")
-        print(f"123 - {self.cat}")
+        self.classes = dict(zip(sorted(self.cat), range(len(self.cat))))
+        #! classes: {'_scene_': 0, 'bowl': 1, 'box': 2, 'can': 3, 'cup': 4, 'fork': 5, 'knife': 6, 'obstacle': 7, 'pitcher': 8, 'plate': 9, 'support_table': 10, 'tablespoon': 11, 'teapot': 12, 'teaspoon': 13}
+        
+        points_classes = ['bowl','box', 'can', 'cup', 'fork', 'knife', 'pitcher', 'plate', 'support_table', 'tablespoon', 'teapot', 'teaspoon']
 
-        #! cat: {'fork': 'fork', 'knife': 'knife', 'tablespoon': 'tablespoon', 'teaspoon': 'teaspoon', 'plate': 'plate', 'bowl': 'bowl', 'cup': 'cup', 'teapot': 'teapot', 'pitcher': 'pitcher', 'can': 'can', 'box': 'box', 'support_table': 'support_table'}
-        #! classes: {'fork': 1, 'knife': 2, 'tablespoon': 3, 'teaspoon': 4, 'plate': 5, 'bowl': 6, 'cup': 7, 'teapot': 8, 'pitcher': 9, 'can': 10, 'box': 11, 'support_table': 13}
+        points_classes_idx = []
+        for pc in points_classes:
+            if class_choice is not None:
+                if pc in self.classes:
+                    points_classes_idx.append(self.classes[pc])
+                else:
+                    points_classes_idx.append(0)
+            else:
+                if not use_rio27:
+                    points_classes_idx.append(self.classes[pc])#! 所选的特定的id
+                else:
+                    points_classes_idx.append(int(self.vocab_rio27['rio27_name_to_idx'][pc]))
+        
+        self.point_classes_idx = points_classes_idx + [0] #! [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 0]
 
-        self.point_classes_idx = list(self.classes.values()) +[0]#! [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 0]
-
-        self.sorted_cat_list = list(self.cat.keys()) #!不要sorted
+        self.sorted_cat_list =  sorted(self.cat) #!不要sorted
         self.files = {}
         self.eval_type = eval_type
 
@@ -255,7 +264,7 @@ class RIODatasetSceneGraph(data.Dataset):
 
     def __getitem__(self, index):
         scene_id = self.scans[index]
-        print(f"Current working on {scene_id}")
+        #print(f"Current working on {scene_id}")
         #root_raw: ..../test_pipeline_dataset/raw/{table_id}/{scene_id}.obj
         file = os.path.join(self.root_raw, scene_id.split('_')[0], scene_id+self.label_file)
         if not os.path.exists(file):
@@ -384,7 +393,7 @@ class RIODatasetSceneGraph(data.Dataset):
                 obj_pointset = obj_pointset[choice, :]
                 obj_pointset = torch.from_numpy(obj_pointset.astype(np.float32))
 
-                if not self.vae_baseline:#! network_type=shared进入
+                if not self.vae_baseline:#! network_type=shared进入, 对点云进行缩放
                     obj_pointset = self.norm_tensor(obj_pointset, denormalize_box_params(tight_boxes[i]),
                                            scale=True, rotation=self.use_canonical, scale_func=self.scale_func)
                 else:
@@ -466,7 +475,7 @@ class RIODatasetSceneGraph(data.Dataset):
                     else:
                         output['manipulate']['type'] = 'none'
                 elif output['manipulate']['type'] == 'relationship':
-                    rel, pair, suc = self.modify_relship(output['decoder'])
+                    rel, pair, suc = self.modify_relship(output['decoder'], interpretable=True)
                     if suc:
                         output['manipulate']['relship'] = (rel, pair)
                     else:
@@ -533,7 +542,7 @@ class RIODatasetSceneGraph(data.Dataset):
             if trials > 100:
                 return -1
             trials += 1
-            node_id = np.random.randint(len(graph['objs']) - 1)#! -1: 不包括最后一个_scene_(id=0)
+            node_id = np.random.randint(len(graph['objs']) - 1)#不包含最后一个0
 
         graph['objs'].pop(node_id)
         #print(f"536 - {node_id}, {len(graph['feats'])}")
@@ -578,17 +587,6 @@ class RIODatasetSceneGraph(data.Dataset):
          '0: none'''
         # subset of edge labels that are spatially interpretable (evaluatable via geometric contraints)
         interpretable_rels = [1,2,3,4] #! 修改！！！只更改上下左右 #[2, 3, 4, 5, 8, 9, 10, 11]
-        inside_rel = [7, 22, 23, 24, 25, 26]
-        
-        # arm chair, basked, bathtub, bidet, bookshelf, box, chair,  commode, cupboard, trash bin, kettle, shelf,
-        # wardrobe, sink
-        inside_obj = [1, 7, 9, 13, 20, 22, 28, 37, 43, 67, 74, 119, 129, 156]
-
-        hanging_rel = [14, 17]
-        # backpack, bag, blinds, clock, curtain
-        hanging_sub_allowed = [2, 3, 16, 30, 44]
-        # wall
-        hanging_obj_allowed = [155]
 
         did_change = False
         trials = 0
@@ -608,7 +606,7 @@ class RIODatasetSceneGraph(data.Dataset):
             #if interpretable:
             if graph['objs'][obj] in eval_excluded or graph['objs'][sub] in eval_excluded: # don't use the floor
                 continue
-            new_pred = interpretable_rels[np.random.randint(1, len(interpretable_rels))]
+            new_pred = interpretable_rels[np.random.randint(len(interpretable_rels))]
             #else:
             #    new_pred = np.random.randint(1, 27)
 
@@ -691,10 +689,10 @@ def collate_fn_vaegan(batch, use_points=False):
                 triples[:, 0] += obj_offset
                 triples[:, 2] += obj_offset
 
-                all_triples.append(triples)
-                all_triple_to_scene.append(torch.LongTensor(num_triples).fill_(i))
+                all_triples.append(triples)#! 每个关系三元组所属的场景索引。
+                all_triple_to_scene.append(torch.LongTensor(num_triples).fill_(i))#! 创建一个torch.LongTensor对象，其长度等于num_triples，并将所有元素填充为整数i。
 
-            all_obj_to_scene.append(torch.LongTensor(num_objs).fill_(i))
+            all_obj_to_scene.append(torch.LongTensor(num_objs).fill_(i))#!每个对象所属的场景索引。
 
             obj_offset += num_objs
 

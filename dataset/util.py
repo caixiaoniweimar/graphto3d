@@ -142,14 +142,15 @@ def get_points_instances_from_mesh(file, labelName2InstanceId):
                     points_list.append(vertex)
                     instances_list.append(instance_id)
 
-    points = np.array(points_list)
-    instances = np.array(instances_list)
-    # Get the unique rows and their corresponding indices
-    unique_rows, indices = np.unique(points, axis=0, return_index=True)
-    
-    # Update instances_list to remove instances corresponding to duplicate points
-    instances = np.array(instances)[indices]
+    """     points = np.array(points_list)
+        instances = np.array(instances_list)
+        # Get the unique rows and their corresponding indices
+        unique_rows, indices = np.unique(points, axis=0, return_index=True)
+        
+        # Update instances_list to remove instances corresponding to duplicate points
+        instances = np.array(instances)[indices]
 
-    # Update points_list to contain only unique points
-    points = np.array([list(row) for row in unique_rows])
-    return points, instances
+        # Update points_list to contain only unique points
+        points = np.array([list(row) for row in unique_rows])
+        return points, instances """
+    return np.array(points_list), np.array(instances_list)
