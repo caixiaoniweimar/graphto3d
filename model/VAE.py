@@ -56,7 +56,7 @@ class VAE(nn.Module):
                 self.vae.forward(enc_objs, enc_triples, enc_boxes, enc_angles, enc_shapes, attributes, enc_objs_to_scene,
                                  dec_objs, dec_triples, dec_boxes, dec_angles, dec_shapes, dec_attributes, dec_objs_to_scene,
                                  missing_nodes, manipulated_nodes)
-
+            #mu, logvar, mu, logvar, orig_gt_boxes, None, orig_gt_shapes, orig_boxes, None, orig_shapes, boxes, None, shapes, keep
             return mu, logvar, mu, logvar, orig_gt_boxes, orig_gt_angles, orig_gt_shapes, orig_boxes, orig_angles, orig_shapes, boxes, angles, shapes, keep
 
         elif self.type_ == 'dis':
@@ -260,9 +260,10 @@ class VAE(nn.Module):
 
     def decoder_with_additions_boxes_and_shape(self, z_box, z_shape, objs, triples, attributes, missing_nodes,
                                                manipulated_nodes, atlas):
-        if self.type_ == 'shared':
+        if self.type_ == 'shared':#! 修改！！！
             outs, keep = self.vae.decoder_with_additions(z_box, objs, triples, attributes, missing_nodes, manipulated_nodes)
-            return outs[:2], None, outs[2], keep
+            assert(len(outs)!=2)
+            return outs[0], None, outs[1], keep
 
         elif self.type_ == 'sln':
             boxes, angles, keep = self.decoder_with_additions_boxs(z_box, objs, triples, attributes, missing_nodes,
@@ -334,7 +335,7 @@ class VAE(nn.Module):
         return z, log_var
 
     def sample_box_and_shape(self, point_classes_idx, point_ae, dec_objs, dec_triplets, attributes=None):
-        if self.type_ == 'shared':
+        if self.type_ == 'shared':#! 进入
             return self.vae.sample(point_classes_idx, point_ae, self.mean_est, self.cov_est, dec_objs,  dec_triplets, attributes)
         boxes = self.sample_box(dec_objs, dec_triplets, attributes)
         shapes = self.sample_shape(point_classes_idx, dec_objs, point_ae, dec_triplets, attributes)

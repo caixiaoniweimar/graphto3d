@@ -81,7 +81,77 @@ file_path = '/media/caixiaoni/xiaonicai-u/test_pipeline_dataset/raw/7b4acb843fd4
 
 print(points.shape, instances.shape) """
 #import numpy; print(numpy.__version__)
-import torch
+""" import torch
 print(torch.backends.cudnn.version())
 print(torch.backends.cudnn.is_available())
-print(torch.backends.cudnn.enabled)
+print(torch.backends.cudnn.enabled) """
+
+catfile = "/media/caixiaoni/xiaonicai-u/test_pipeline_dataset/classes.txt"
+class_choice = ['fork', 'knife', 'tablespoon','teaspoon', 'plate', 'bowl', 'cup', 'teapot', 'pitcher', 'can', 'box', 'support_table']
+cat = {}
+with open(catfile, 'r') as f:
+    for line in f:
+        category = line.rstrip()
+        cat[category] = category
+#{'_scene_': '_scene_', 'fork': 'fork', 'knife': 'knife', 'tablespoon': 'tablespoon', 'teaspoon': 'teaspoon', 'plate': 'plate', 'bowl': 'bowl', 'cup': 'cup', 'teapot': 'teapot', 'pitcher': 'pitcher', 'can': 'can', 'box': 'box', 'support_table': 'support_table'}
+classes = dict(zip(cat, range(len(cat))))
+#print(cat)
+#print(classes)
+
+if not class_choice is None: #剔除obstacle
+    cat = {k: v for k, v in cat.items() if k in class_choice}
+#{'fork': 'fork', 'knife': 'knife', 'tablespoon': 'tablespoon', 'teaspoon': 'teaspoon', 'plate': 'plate', 'bowl': 'bowl', 'cup': 'cup', 'teapot': 'teapot', 'pitcher': 'pitcher', 'can': 'can', 'box': 'box', 'support_table': 'support_table'}
+    classes = {k:v for k,v in classes.items() if k in class_choice}
+#{'fork': 1, 'knife': 2, 'tablespoon': 3, 'teaspoon': 4, 'plate': 5, 'bowl': 6, 'cup': 7, 'teapot': 8, 'pitcher': 9, 'can': 10, 'box': 11, 'support_table': 13}
+
+""" print(f"after choice: {cat}")
+print(f"after choice: {classes}")
+
+points_classes = ['fork', 'knife', 'tablespoon','teaspoon', 'plate', 'bowl', 'cup', 'teapot', 'pitcher', 'can', 'box', 'support_table']
+points_classes_idx = []
+for pc in points_classes:
+    if class_choice is not None:
+        if pc in classes:
+            points_classes_idx.append(classes[pc])
+        else:
+            points_classes_idx.append(0)
+    else:
+        points_classes_idx.append(classes[pc])
+
+point_classes_idx = points_classes_idx + [0]       #! [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 0]
+print(point_classes_idx)
+point_classes_idx = list(classes.values()) +[0]
+print(point_classes_idx)
+
+sorted_cat_list = sorted(cat)
+print(sorted_cat_list)
+sorted_cat_list = list(cat.keys())
+print(sorted_cat_list)
+
+vocab = {}
+import os 
+with open(os.path.join("/media/caixiaoni/xiaonicai-u/test_pipeline_dataset", 'classes.txt'), "r") as f:
+    vocab['object_idx_to_name'] = f.readlines() 
+with open(os.path.join("/media/caixiaoni/xiaonicai-u/test_pipeline_dataset", 'relationships.txt'), "r") as f:
+    vocab['pred_idx_to_name'] = f.readlines()
+print(vocab)
+
+
+instance2mask = {0: 0, 40: 1, 31: 2, 25: 3, 7: 4, 117: 5}
+instances = np.array([40,31,25,7,7,7,7,117])
+masks = np.array(list(map(lambda l: instance2mask[l] if l in instance2mask.keys() else 0, instances)),
+                             dtype=np.int32)
+print(masks)
+cat = [40,31,25,7,11]
+for i in range(len(cat)):
+    print(np.where(masks == i + 1)) """
+
+catfile = "/media/caixiaoni/xiaonicai-u/test_pipeline_dataset/classes.txt"
+with open(catfile, 'r') as f:
+    for line in f:
+        category = line.rstrip()
+        if category != "obstacle":
+            cat[category] = category
+
+classes = dict(zip(sorted(cat), range(len(cat))))
+print(classes)

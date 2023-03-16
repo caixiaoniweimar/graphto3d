@@ -50,6 +50,16 @@ class ShapeAuxillary(nn.Module):
     """
     Auxiliary discriminator that receives a shape encoding and judges if it is plausible and
     simultaneously predicts a class label for the given shape encoding
+    #!初始化ShapeAuxillary类。它接受shape_dim（形状编码的维度）和num_classes（类别的数量）作为参数。
+    定义D，一个包含线性层、批量归一化层和LeakyReLU激活函数的序列神经网络，用于提取输入形状编码的特征。
+    定义classifier，一个线性层，用于从提取的特征中预测类别标签。
+    定义discriminator，一个线性层，用于判断输入形状编码是否合理（真实或伪造）。
+    使用_init_weights函数初始化D、classifier和discriminator的权重。
+    在forward方法中，首先将输入的形状编码传递给D网络，得到特征表示（backbone）。
+    将特征表示传递给classifier，得到类别预测的logits（未归一化的概率）。
+    将特征表示传递给discriminator，得到真实或伪造的概率，并通过Sigmoid激活函数将其转换为概率值。
+    返回类别预测的logits和真实或伪造的概率。
+    这个辅助模块可以用于在训练过程中提供额外的监督信号，以帮助模型更好地学习形状编码的表示。
     """
     def __init__(self, shape_dim, num_classes):
         super(ShapeAuxillary, self).__init__()
@@ -82,6 +92,7 @@ class BoxDiscriminator(nn.Module):
     Relationship discriminator based on bounding boxes. For a given object pair, it takes their
     semantic labels, the relationship label and the two bounding boxes of the pair and judges
     whether this is a plausible occurence.
+    #! 给定对象对, 语义标签 + 关系标签 + 两个对象的bbox; 判断之间关系是否合理
     """
     def __init__(self, box_dim, rel_dim, obj_dim, with_obj_labels=True):
         super(BoxDiscriminator, self).__init__()
@@ -102,10 +113,14 @@ class BoxDiscriminator(nn.Module):
                                nn.LeakyReLU(),
                                nn.Linear(512, 1),
                                nn.Sigmoid())
+        #! 包含多个线性层、批归一化层和LeakyReLU激活函数。最后，输出通过一个Sigmoid激活函数，将其转换为0到1之间的值，表示关系是否合理。
 
         self.D.apply(_init_weights)
 
     def forward(self, objs, triples, boxes, keeps=None, with_grad=False, is_real=False):
+        #! 首先从triples中提取主体索引、谓词（关系）和客体索引。
+        #! 然后根据这些索引从boxes张量中提取主体和客体的边界框。
+        #! 接下来，将主体和客体的类别（如果with_obj_labels=True），谓词（关系）和边界框连接起来作为输入。
 
         s_idx, predicates, o_idx = triples.chunk(3, dim=1)
         predicates = predicates.squeeze(1)
@@ -126,6 +141,7 @@ class BoxDiscriminator(nn.Module):
             objectCat = to_one_hot_vector(self.obj_dim, objs[o_idx])
 
             x = torch.cat([subjectCat, objectCat, predicates, subjectBox, objectBox], 1)
+            #! 将主体和客体的类别（如果with_obj_labels=True），谓词（关系）和边界框连接起来作为输入 -> x
 
         else:
             x = torch.cat([predicates, subjectBox, objectBox], 1)
@@ -144,7 +160,7 @@ class BoxDiscriminator(nn.Module):
             return y[keep_t], reg
         else:
             return y, reg
-
+        #! reg：这是一个与y形状相同的张量，表示梯度惩罚。梯度惩罚用于训练过程中的判别器，以确保梯度不会变得过大，从而有助于提高训练稳定性。如果with_grad参数为False，reg将为None。
 
 def discriminator_regularizer(logits, arg, is_real):
 

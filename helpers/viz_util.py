@@ -74,34 +74,35 @@ def load_semantic_scene_graphs(json_relationships, json_objects):
 
     with open(json_objects, "r") as read_file:
         data = json.load(read_file)
-        for s in data["scans"]:
-            scan = s["scan"]
+        for s in data["scenes"]:
+            scan = s["scene_id"]
             objs = s['objects']
             scene_graphs_obj[scan] = {}
-            scene_graphs_obj[scan]['scan'] = scan
+            scene_graphs_obj[scan]['scene_id'] = scan
             scene_graphs_obj[scan]['objects'] = []
             for obj in objs:
                 scene_graphs_obj[scan]['objects'].append(obj)
     scene_graphs = {}
     with open(json_relationships, "r") as read_file:
         data = json.load(read_file)
-        for s in data["scans"]:
-            scan = s["scan"]
-            split = str(s["split"])
-            if scan + "_" + split not in scene_graphs:
-                scene_graphs[scan + "_" + split] = {}
-                scene_graphs[scan + "_" + split]['objects'] = []
-                print("WARNING: no objects for this scene")
-            scene_graphs[scan + "_" + split]['relationships'] = []
+        for s in data["scenes"]:
+            scan = s["scene_id"]
+            
+            if scan not in scene_graphs:
+                scene_graphs[scan] = {}
+                scene_graphs[scan]['objects'] = []
+                #raise ValueError("WARNING: no objects for this scene")
+            scene_graphs[scan]['relationships'] = []
             for k in s["objects"].keys():
                 ob = s['objects'][k]
                 for i,o in enumerate(scene_graphs_obj[scan]['objects']):
-                    if o['id'] == k:
+                    #print(f"{scan} - {o['global_id']} - {k}")
+                    if int(o['global_id']) == int(k):
                         inst = i
                         break
-                scene_graphs[scan + "_" + split]['objects'].append(scene_graphs_obj[scan]['objects'][inst])
+                scene_graphs[scan]['objects'].append(scene_graphs_obj[scan]['objects'][inst])
             for rel in s["relationships"]:
-                scene_graphs[scan + "_" + split]['relationships'].append(rel)
+                scene_graphs[scan]['relationships'].append(rel)
     return scene_graphs
 
 

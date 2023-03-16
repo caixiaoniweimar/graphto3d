@@ -48,7 +48,8 @@ class LineMesh(object):
             radius {float} -- radius of cylinder (default: {0.15})
         """
         self.points = np.array(points)
-        self.lines = np.array(lines) if lines is not None else self.lines_from_ordered_points(self.points)
+        self.lines = np.array(
+            lines) if lines is not None else self.lines_from_ordered_points(self.points)
         self.colors = np.array(colors)
         self.radius = radius
         self.cylinder_segments = []
@@ -64,7 +65,6 @@ class LineMesh(object):
         first_points = self.points[self.lines[:, 0], :]
         second_points = self.points[self.lines[:, 1], :]
         line_segments = second_points - first_points
-        #print(f"line_segments: {type(line_segments)}{line_segments.shape}")
         line_segments_unit, line_lengths = normalized(line_segments)
 
         z_axis = np.array([0, 0, 1])
@@ -83,9 +83,11 @@ class LineMesh(object):
                 translation, relative=False)
             if axis is not None:
                 axis_a = axis * angle
+                R=o3d.geometry.get_rotation_matrix_from_axis_angle(axis_a)
+                print("axis is not None: ", type(R), R)
                 cylinder_segment = cylinder_segment.rotate(
-                   R=o3d.geometry.get_rotation_matrix_from_axis_angle(axis_a), center=True)
-                # cylinder_segment = cylinder_segment.rotate(
+                   R=o3d.geometry.get_rotation_matrix_from_axis_angle(axis_a))
+                #cylinder_segment = cylinder_segment.rotate(
                 #  axis_a, center=True, type=o3d.geometry.RotationType.AxisAngle)
             # color cylinder
             color = self.colors if self.colors.ndim == 1 else self.colors[i, :]

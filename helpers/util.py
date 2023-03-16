@@ -32,15 +32,30 @@ def params_to_8points_no_rot(box):
     """ Given bounding box as 6 parameters (without rotation): w, l, h, cx, cy, cz, compute the 8 corners of the box.
         Works when the box is axis aligned
     """
-    w, l, h, cx, cy, cz = box
-    points = []
-    for i in [-1, 1]:
-        for j in [-1, 1]:
-            for k in [-1, 1]:
-                points.append([w.item()/2 * i, l.item()/2 * j, h.item()/2 * k])
-    points = np.asarray(points)
-    points += np.expand_dims(np.array([cx.item(), cy.item(), cz.item()]), 0)
-    return points
+    """     w, l, h, cx, cy, cz = box
+        points = []
+        for i in [-1, 1]:
+            for j in [-1, 1]:
+                for k in [-1, 1]:
+                    points.append([w.item()/2 * i, l.item()/2 * j, h.item()/2 * k]) """
+    corner_offsets = [(-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1),
+            (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)]
+    l,w,h, c_x,c_y,c_z = box
+    half_l, half_w, half_h = l / 2, w / 2, h / 2
+
+    corners = []
+
+    for offset in corner_offsets:
+        corner_x = c_x + offset[0] * half_l
+        corner_y = c_y + offset[1] * half_w
+        corner_z = c_z + offset[2] * half_h
+        corners.append((corner_x, corner_y, corner_z))
+    corners = np.array(corners)
+
+    #points = np.asarray(points)
+    #points += np.expand_dims(np.array([cx.item(), cy.item(), cz.item()]), 0)
+    corners = np.array([[x.item() for x in row] for row in corners])
+    return corners
 
 
 def fit_shapes_to_box(box, shape, withangle=True):
@@ -50,18 +65,19 @@ def fit_shapes_to_box(box, shape, withangle=True):
         :param shape: tensor
         :param withangle: boolean
         :return: transformed shape
+    #!目的是将给定的归一化形状 shape 转换为适应输入边界框 box(反归一化后) 的形状。
     """
-    box = box.detach().cpu().numpy()
-    shape = shape.detach().cpu().numpy()
+    box = box.detach().cpu().numpy()#! 将输入张量 box 从计算图中分离（detach()），并将其从 GPU 上移到 CPU 上（如果可用），然后转换为 NumPy 数组。
+    shape = shape.detach().cpu().numpy()#! 将输入张量 shape 分离并转换为 NumPy 数组。
     if withangle:
-        w, l, h, cx, cy, cz, z = box
+        l, w, h, cx, cy, cz, z = box
     else:
-        w, l, h, cx, cy, cz = box
+        l, w, h, cx, cy, cz = box
     # scale
-    shape_size = np.max(shape, axis=0) - np.min(shape, axis=0)
-    shape = shape / shape_size
-    shape *= box[:3]
-    if withangle:
+    shape_size = np.max(shape, axis=0) - np.min(shape, axis=0)#! 计算输入形状 shape 的尺寸（即最大坐标值和最小坐标值之差）。
+    shape = shape / shape_size#! 将输入形状 shape 除以其尺寸以归一化
+    shape *= box[:3] #! 将归一化的形状 shape 乘以输入边界框 box 的前三个元素, 从而将 shape 缩放为适应 box 的大小。
+    if withangle:#!X
         # rotate
         shape = (get_rotation(z, degree=True).astype("float32") @ shape.T).T
     # translate
@@ -122,8 +138,8 @@ def normalize_box_params(box_params, scale=3):
     :param scale: float scalar that scales the parameter distribution
     :return: normalized box parameters array of shape [7]
     """
-    mean = np.array([ 0.21988743, 0.21643892, 0.16870684, 0.00570856, -0.00549303, 0.28968436 ])
-    std = np.array([ 0.23130621, 0.20096205, 0.22712821, 0.1206166, 0.11472497, 0.13773446  ])
+    mean = np.array([0.22877924,  0.24143317,  0.14675027 , 0.00316609, -0.00581015,  0.21923892])#np.array([ 2.42144732e-01,  2.35105852e-01,  1.53590141e-01, -1.54968627e-04, -2.68763962e-02,  2.23784580e-01 ])
+    std = np.array([0.26284911, 0.2582661 , 0.17480837, 0.13364749 ,0.14443358 ,0.11097717])#np.array([ 0.27346058, 0.23751527, 0.18529049, 0.12504842, 0.13313938 ,0.12407406 ])
 
     return scale * ((box_params - mean) / std)
 
@@ -137,8 +153,8 @@ def denormalize_box_params(box_params, scale=3, params=6):
     :return: denormalized box parameters array of shape [params]
     """
     if params == 6:
-        mean = np.array([ 0.21988743, 0.21643892, 0.16870684, 0.00570856, -0.00549303, 0.28968436 ])
-        std = np.array([ 0.23130621, 0.20096205, 0.22712821, 0.1206166, 0.11472497, 0.13773446  ])
+        mean = np.array([0.22877924,  0.24143317,  0.14675027 , 0.00316609, -0.00581015,  0.21923892])#np.array([ 2.42144732e-01,  2.35105852e-01,  1.53590141e-01, -1.54968627e-04, -2.68763962e-02,  2.23784580e-01 ])
+        std = np.array([0.26284911, 0.2582661 , 0.17480837, 0.13364749 ,0.14443358 ,0.11097717])#np.array([ 0.27346058, 0.23751527, 0.18529049, 0.12504842, 0.13313938 ,0.12407406 ])
     else:
         raise NotImplementedError
     return (box_params * std) / scale + mean
@@ -152,8 +168,8 @@ def batch_torch_denormalize_box_params(box_params, scale=3):
     :return: float tensor of shape [N, 6], the denormalized box parameters
     """
 
-    mean = torch.tensor([ 0.21988743, 0.21643892, 0.16870684, 0.00570856, -0.00549303, 0.28968436 ]).reshape(1,-1).float().cuda()
-    std = torch.tensor([ 0.23130621, 0.20096205, 0.22712821, 0.1206166, 0.11472497, 0.13773446  ]).reshape(1,-1).float().cuda()
+    mean = torch.tensor([ 0.22877924,  0.24143317,  0.14675027 , 0.00316609, -0.00581015,  0.21923892 ]).reshape(1,-1).float().cuda()#torch.tensor([ 2.42144732e-01,  2.35105852e-01,  1.53590141e-01, -1.54968627e-04, -2.68763962e-02,  2.23784580e-01 ]).reshape(1,-1).float().cuda()
+    std = torch.tensor([ 0.26284911, 0.2582661 , 0.17480837, 0.13364749 ,0.14443358 ,0.11097717]).reshape(1,-1).float().cuda()#torch.tensor([ 0.27346058, 0.23751527, 0.18529049, 0.12504842, 0.13313938 ,0.12407406 ]).reshape(1,-1).float().cuda()
 
     return (box_params * std) / scale + mean
 

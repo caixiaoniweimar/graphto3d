@@ -24,21 +24,21 @@ import json
 parser = argparse.ArgumentParser()
 parser.add_argument('--num_points', type=int, default=1024, help='number of points in the shape')
 
-parser.add_argument('--dataset', required=False, type=str, default="./GT", help="dataset path")
-parser.add_argument('--dataset_3RScan', type=str, default='', help="dataset path of 3RScan")
-parser.add_argument('--label_file', required=False, type=str, default='labels.instances.align.annotated.ply', help="label file name")
+parser.add_argument('--dataset', required=False, type=str, default="/media/caixiaoni/xiaonicai-u/test_pipeline_dataset", help="dataset path")
+parser.add_argument('--dataset_raw', type=str, default='/media/caixiaoni/xiaonicai-u/test_pipeline_dataset/raw', help="dataset path of raw dataset")
+parser.add_argument('--label_file', required=False, type=str, default='.obj', help="label file name")
 
 parser.add_argument('--with_points', type=bool_flag, default=False, help="if false, only predicts layout")
 parser.add_argument('--with_feats', type=bool_flag, default=True, help="Load Feats directly instead of points.")
 
 parser.add_argument('--manipulate', default=True, type=bool_flag)
-parser.add_argument('--path2atlas', default="./experiments/model_36.pth", type=str)
-parser.add_argument('--exp', default='./experiments/layout_test', help='experiment name')
-parser.add_argument('--epoch', type=str, default='100', help='saved epoch')
+parser.add_argument('--path2atlas', default="./experiments/atlasnet/model_70.pth", type=str)
+parser.add_argument('--exp', default='./experiments/graphto3d_test_nepoch_300_points_3072', help='experiment name')
+parser.add_argument('--epoch', type=str, default='300', help='saved epoch')
 parser.add_argument('--recompute_stats', type=bool_flag, default=False, help='Recomputes statistics of evaluated networks')
 parser.add_argument('--evaluate_diversity', type=bool_flag, default=False, help='Computes diversity based on multiple predictions')
-parser.add_argument('--visualize', default=False, type=bool_flag)
-parser.add_argument('--export_3d', default=False, type=bool_flag, help='Export the generated shapes and boxes in json files for future use')
+parser.add_argument('--visualize', default=True, type=bool_flag)
+parser.add_argument('--export_3d', default=True, type=bool_flag, help='Export the generated shapes and boxes in json files for future use')
 args = parser.parse_args()
 
 
@@ -63,9 +63,9 @@ def evaluate():
         root=args.dataset,
         atlas=point_ae,
         path2atlas=args.path2atlas,
-        root_3rscan=args.dataset_3RScan,
+        root_raw=args.dataset_raw,
         label_file=args.label_file,
-        split='val_scans',
+        split='validation_scenes',
         npoints=args.num_points,
         data_augmentation=False,
         use_points=args.with_points,
@@ -87,9 +87,9 @@ def evaluate():
         root=args.dataset,
         atlas=point_ae,
         path2atlas=args.path2atlas,
-        root_3rscan=args.dataset_3RScan,
+        root_raw=args.dataset_raw,
         label_file=args.label_file,
-        split='val_scans',
+        split='validation_scenes',
         npoints=args.num_points,
         data_augmentation=False,
         use_points=args.with_points,
@@ -111,10 +111,10 @@ def evaluate():
         root=args.dataset,
         atlas=point_ae,
         path2atlas=args.path2atlas,
-        root_3rscan=args.dataset_3RScan,
+        root_raw=args.dataset_raw,
         label_file=args.label_file,
         npoints=args.num_points,
-        split='train_scans',
+        split='train_scenes',
         use_points=args.with_points,
         use_scene_rels=modelArgs['use_scene_rels'],
         with_changes=False,
@@ -132,9 +132,9 @@ def evaluate():
         root=args.dataset,
         atlas=point_ae,
         path2atlas=args.path2atlas,
-        root_3rscan=args.dataset_3RScan,
+        root_raw=args.dataset_raw,
         label_file=args.label_file,
-        split='val_scans',
+        split='validation_scenes',
         npoints=args.num_points,
         data_augmentation=False,
         use_points=args.with_points,
@@ -201,7 +201,7 @@ def evaluate():
     model.compute_statistics(exp=args.exp, epoch=args.epoch, stats_dataloader=stats_dataloader, force=args.recompute_stats)
 
     cat2objs = None
-    if model.type_ == 'sln':
+    if model.type_ == 'sln':#! X
         # prepare data for retrieval for the 3d-sln baseline
         rel_json_file = stats_dataset.root + '/relationships_merged_train_clean.json'
         cat2objs = retrieval.read_box_json(rel_json_file, stats_dataset.box_json_file)
@@ -225,18 +225,18 @@ def evaluate():
     validate_constrains_loop(test_dataloader_no_changes, model, with_diversity=args.evaluate_diversity,
                              with_angles=modelArgs['with_angles'], vocab=test_dataset_no_changes.vocab,
                              point_classes_idx=test_dataset_no_changes.point_classes_idx, point_ae=point_ae,
-                             export_3d=args.export_3d, cat2objs=cat2objs, datasize='large' if modelArgs['large'] else 'small')
+                             export_3d=args.export_3d, cat2objs=cat2objs)
 
 
 def validate_constrains_loop_w_changes(testdataloader, model, with_diversity=True, atlas=None, with_angles=False, num_samples=10, cat2objs=None):
-    if with_diversity and num_samples < 2:
+    if with_diversity and num_samples < 2:#! X
         raise ValueError('Diversity requires at least two runs (i.e. num_samples > 1).')
 
     accuracy = {}
     accuracy_unchanged = {}
     accuracy_in_orig_graph = {}
 
-    for k in ['left', 'right', 'front', 'behind', 'smaller', 'bigger', 'lower', 'higher', 'same', 'total']:
+    for k in ['left', 'right', 'front', 'behind', 'close by', 'symmetrical to', 'total']:
         accuracy_in_orig_graph[k] = []
         accuracy_unchanged[k] = []
         accuracy[k] = []
@@ -282,9 +282,9 @@ def validate_constrains_loop_w_changes(testdataloader, model, with_diversity=Tru
         all_pred_boxes = []
 
         enc_boxes = enc_tight_boxes[:, :6]
-        enc_angles = enc_tight_boxes[:, 6].long() - 1
-        enc_angles = torch.where(enc_angles > 0, enc_angles, torch.zeros_like(enc_angles))
-        enc_angles = torch.where(enc_angles < 24, enc_angles, torch.zeros_like(enc_angles))
+        enc_angles = None#enc_tight_boxes[:, 6].long() - 1
+        enc_angles = None#torch.where(enc_angles > 0, enc_angles, torch.zeros_like(enc_angles))
+        enc_angles = None#torch.where(enc_angles < 24, enc_angles, torch.zeros_like(enc_angles))
 
         attributes = None
 
@@ -295,15 +295,15 @@ def validate_constrains_loop_w_changes(testdataloader, model, with_diversity=Tru
             if args.manipulate:
                 boxes_pred, points_pred, keep = model.decoder_with_changes_boxes_and_shape(z_box, z_shape, dec_objs,
                                                                                            dec_triples, attributes, missing_nodes, manipulated_nodes, atlas)
-                if with_angles:
-                    boxes_pred, angles_pred = boxes_pred
+                #if with_angles:
+                #    boxes_pred, angles_pred = boxes_pred
             else:
                 boxes_pred, angles_pred, points_pred, keep = model.decoder_with_additions_boxes_and_shape(z_box, z_shape,
                                                                                                           dec_objs, dec_triples, attributes, missing_nodes,  manipulated_nodes, atlas)
-                if with_angles and angles_pred is None:
-                    boxes_pred, angles_pred = boxes_pred
+                #if with_angles and angles_pred is None:
+                #    boxes_pred, angles_pred = boxes_pred
 
-            if with_diversity:
+            if with_diversity:#! X
                 # Run multiple times to obtain diversity
                 # Only when a node was added or manipulated we run the diversity computation
                 if len(missing_nodes) > 0 or len(manipulated_nodes) > 0:
@@ -322,17 +322,17 @@ def validate_constrains_loop_w_changes(testdataloader, model, with_diversity=Tru
                                 z_box, z_shape, dec_objs, dec_triples, attributes, missing_nodes, manipulated_nodes,
                                 atlas)
 
-                        if with_angles and diversity_angles is None:
-                            diversity_boxes, diversity_angles = diversity_boxes
+                        #if with_angles and diversity_angles is None:
+                        #    diversity_boxes, diversity_angles = diversity_boxes
 
-                        if model.type_ == 'sln':
+                        if model.type_ == 'sln':#!X
                             dec_objs_filtered = dec_objs[diversity_keep[:,0] == 0]
                             diversity_boxes_filtered = diversity_boxes[diversity_keep[:,0] == 0]
                             dec_objs_filtered = dec_objs_filtered.reshape((-1, 1))
                             diversity_boxes = diversity_boxes.reshape((-1, 6))
                             diversity_points_retrieved, diversity_retrieval_ids_ivd = retrieval.rio_retrieve(
                                 dec_objs_filtered, diversity_boxes_filtered, testdataloader.dataset.vocab, cat2objs,
-                                testdataloader.dataset.root_3rscan, skip_scene_node=False, return_retrieval_id=True)
+                                testdataloader.dataset.root_raw, skip_scene_node=False, return_retrieval_id=True)
                             diversity_points = torch.zeros((len(dec_objs), 1024, 3))
                             diversity_points[diversity_keep[:,0] == 0] = diversity_points_retrieved
                             diversity_retrieval_ids = [''] * len(dec_objs)
@@ -366,9 +366,9 @@ def validate_constrains_loop_w_changes(testdataloader, model, with_diversity=Tru
                         # We use keep to filter changed nodes
                         boxes_diversity_sample.append(diversity_boxes[diversity_keep[:, 0] == 0])
 
-                        if with_angles:
+                        #if with_angles:
                             # We use keep to filter changed nodes
-                            angle_diversity_sample.append(np.expand_dims(np.argmax(diversity_angles[diversity_keep[:, 0] == 0].cpu().numpy(), 1), 1) / 24. * 360.)
+                        #    angle_diversity_sample.append(np.expand_dims(np.argmax(diversity_angles[diversity_keep[:, 0] == 0].cpu().numpy(), 1), 1) / 24. * 360.)
 
                         if len(normalized_points) > 0:
                             shapes_sample.append(torch.stack(normalized_points)) # keep has already been applied for points
@@ -428,8 +428,9 @@ def validate_constrains_loop_w_changes(testdataloader, model, with_diversity=Tru
                                                              model.vocab, accuracy_in_orig_graph, with_norm=model.type_ != 'sln')
         accuracy_unchanged = validate_constrains(dec_triples, boxes_pred, dec_tight_boxes, keep, model.vocab,
                                                  accuracy_unchanged, with_norm=model.type_ != 'sln')
+        print(f"Additions/RelationsChanged_unchanged-accuracy: {accuracy_unchanged}")
 
-    if with_diversity:
+    if with_diversity:#! X
         print("DIVERSITY:")
         print("\tShape (Avg. Chamfer Distance) = %f" % (np.mean(all_diversity_chamfer)))
         print("\tBox (Std. metric size and location) = %f, %f" % (
@@ -443,23 +444,22 @@ def validate_constrains_loop_w_changes(testdataloader, model, with_diversity=Tru
         # NOTE 'changed nodes placed in original graph' are the results reported in the paper!
         # The unchanged nodes are kept from the original scene, and the accuracy in the new nodes is computed with
         # respect to these original nodes
-        print('{} & {:.2f} & {:.2f} & {:.2f} & {:.2f} &{:.2f} & {:.2f}'.format(typ, np.mean([np.mean(dic[keys[0]]), np.mean(dic[keys[1]])]),
-                                                                               np.mean([np.mean(dic[keys[2]]), np.mean(dic[keys[3]])]), np.mean([np.mean(dic[keys[4]]), np.mean(dic[keys[5]])]),
-                                                                               np.mean([np.mean(dic[keys[6]]), np.mean(dic[keys[7]])]), np.mean(dic[keys[8]]), np.mean(dic[keys[9]])))
+        print('{} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} '.format(typ, np.mean(dic[keys[0]]), np.mean(dic[keys[1]]), np.mean(dic[keys[2]]), np.mean(dic[keys[3]]), np.mean(dic[keys[4]]), np.mean(dic[keys[5]]), np.mean(dic[keys[6]])))
         print('means of mean: {:.2f}'.format(np.mean([np.mean([np.mean(dic[keys[0]]), np.mean(dic[keys[1]])]),
-                                                      np.mean([np.mean(dic[keys[2]]), np.mean(dic[keys[3]])]), np.mean([np.mean(dic[keys[4]]), np.mean(dic[keys[5]])]),
-                                                      np.mean([np.mean(dic[keys[6]]), np.mean(dic[keys[7]])]), np.mean(dic[keys[8]])])))
+                                                      np.mean([np.mean(dic[keys[2]]), np.mean(dic[keys[3]])]), np.mean(dic[keys[4]]), np.mean(dic[keys[5]]), np.mean(dic[keys[6]]) ])))
+
+
 
 
 def validate_constrains_loop(testdataloader, model, with_diversity=True, with_angles=False, vocab=None,
-                             point_classes_idx=None, point_ae=None, export_3d=False, cat2objs=None, datasize='large',
+                             point_classes_idx=None, point_ae=None, export_3d=False, cat2objs=None,
                              num_samples=10):
 
     if with_diversity and num_samples < 2:
         raise ValueError('Diversity requires at least two runs (i.e. num_samples > 1).')
 
     accuracy = {}
-    for k in ['left', 'right', 'front', 'behind', 'smaller', 'bigger', 'lower', 'higher', 'same', 'total']:
+    for k in ['left', 'right', 'front', 'behind', 'close by', 'symmetrical to', 'total']:
         # compute validation for these relation categories
         accuracy[k] = []
 
@@ -474,8 +474,7 @@ def validate_constrains_loop(testdataloader, model, with_diversity=True, with_an
         try:
             dec_objs, dec_triples = data['decoder']['objs'], data['decoder']['tripltes']
             instances = data['instance_id'][0]
-            scan = data['scan_id'][0]
-            split = data['split_id'][0]
+            scan = data['scene_id'][0]
 
         except Exception as e:
             continue
@@ -485,55 +484,57 @@ def validate_constrains_loop(testdataloader, model, with_diversity=True, with_an
         all_pred_boxes = []
 
         with torch.no_grad():
+            #!!!!!!!!!!!!!!!!非常重要!!!!!!!!!!!!!!!!!!!!!
             boxes_pred, shapes_pred = model.sample_box_and_shape(point_classes_idx, point_ae, dec_objs, dec_triples, attributes=None)
-            if with_angles:
-                boxes_pred, angles_pred = boxes_pred
-                angles_pred = torch.argmax(angles_pred, dim=1, keepdim=True) * 15.0
-            else:
-                angles_pred = None
+            #if with_angles:
+            #    boxes_pred, angles_pred = boxes_pred
+            #    angles_pred = torch.argmax(angles_pred, dim=1, keepdim=True) * 15.0
+            #else:
+            angles_pred = None
 
-            if model.type_ != 'sln':
+            if model.type_ != 'sln':#! shapes_pred 预测的点云, 解码器的生成shape_enc_pred
                 shapes_pred, shape_enc_pred = shapes_pred
 
         if model.type_ != 'sln':
             boxes_pred_den = batch_torch_denormalize_box_params(boxes_pred)
+            #! 反归一化: 将它们从归一化的参数空间转换回原始参数空间。这对于在处理场景中的物体边界框时很有用，因为归一化处理可以使训练和优化过程更加稳定和高效。
         else:
             boxes_pred_den = boxes_pred
 
         if export_3d:
-            if with_angles:
-                boxes_pred_exp = torch.cat([boxes_pred_den.float(),
-                                            angles_pred.view(-1,1).float()], 1).detach().cpu().numpy().tolist()
-            else:
-                boxes_pred_exp = boxes_pred_den.detach().cpu().numpy().tolist()
+            #if with_angles:
+            #    boxes_pred_exp = torch.cat([boxes_pred_den.float(),
+            #                                angles_pred.view(-1,1).float()], 1).detach().cpu().numpy().tolist()
+            #else:
+            boxes_pred_exp = boxes_pred_den.detach().cpu().numpy().tolist()
             if model.type_ != 'sln':
                 # save point encodings
                 shapes_pred_exp = shape_enc_pred.detach().cpu().numpy().tolist()
-            else:
+            else:#! X
                 # 3d-sln baseline does not generate shapes
                 # save object labels to use for retrieval instead
                 shapes_pred_exp = dec_objs.view(-1,1).detach().cpu().numpy().tolist()
+
             for i in range(len(shapes_pred_exp)):
                 if dec_objs[i] not in testdataloader.dataset.point_classes_idx:
                     shapes_pred_exp[i] = []
+                    raise ValueError(f"{dec_objs[i]} not in {testdataloader.dataset.point_classes_idx}")
             shapes_pred_exp = list(shapes_pred_exp)
 
             if scan not in all_pred_shapes_exp:
                 all_pred_boxes_exp[scan] = {}
                 all_pred_shapes_exp[scan] = {}
-            if split not in all_pred_shapes_exp[scan]:
-                all_pred_boxes_exp[scan][split] = {}
-                all_pred_shapes_exp[scan][split] = {}
+                #raise ValueError(f"{scan} not in {all_pred_shapes_exp}")
 
-            all_pred_boxes_exp[scan][split]['objs'] = list(instances)
-            all_pred_shapes_exp[scan][split]['objs'] = list(instances)
+            all_pred_boxes_exp[scan]['objs'] = list(instances)
+            all_pred_shapes_exp[scan]['objs'] = list(instances)
             for i in range(len(dec_objs) - 1):
-                all_pred_boxes_exp[scan][split][instances[i]] = list(boxes_pred_exp[i])
-                all_pred_shapes_exp[scan][split][instances[i]] = list(shapes_pred_exp[i])
+                all_pred_boxes_exp[scan][instances[i]] = list(boxes_pred_exp[i])
+                all_pred_shapes_exp[scan][instances[i]] = list(shapes_pred_exp[i])
 
         if args.visualize:
             # scene graph visualization. saves a picture of each graph to the outfolder
-            colormap = vis_graph(use_sampled_graphs=False, scan_id=scan, split=str(split), data_path=args.dataset,
+            colormap = vis_graph(use_sampled_graphs=False, scan_id=scan, split=None, data_path=args.dataset,
                                  outfolder=args.exp + "/vis_graphs/")
             colors = []
             # convert colors to expected format
@@ -548,11 +549,12 @@ def validate_constrains_loop(testdataloader, model, with_diversity=True, with_an
             colors = np.asarray(colors) / 255.
 
             # layout and shape visualization through open3d
+            #! 应该是这里visualize出错了!!!!!!!!!!!!!!!!!!! 传入了预测的点云, 以及反归一化后的box
             render(boxes_pred_den, angles_pred, classes=vocab['object_idx_to_name'], render_type='points', classed_idx=dec_objs,
                    shapes_pred=shapes_pred.cpu().detach(), colors=colors, render_boxes=True)
 
         all_pred_boxes.append(boxes_pred_den.cpu().detach())
-        if with_diversity:
+        if with_diversity:#! X
 
             # Run multiple times to obtain diversities
             # Diversity results for this dataset sample
@@ -564,7 +566,7 @@ def validate_constrains_loop(testdataloader, model, with_diversity=True, with_an
                     diversity_boxes, diversity_angles = diversity_boxes
                 if model.type_ == 'sln':
                     diversity_points, diversity_retrieval_ids = retrieval.rio_retrieve(
-                        dec_objs, diversity_boxes, vocab, cat2objs, testdataloader.dataset.root_3rscan,
+                        dec_objs, diversity_boxes, vocab, cat2objs, testdataloader.dataset.root_raw,
                         return_retrieval_id=True)
                 else:
                     diversity_points = diversity_points[0]
@@ -641,34 +643,33 @@ def validate_constrains_loop(testdataloader, model, with_diversity=True, with_an
         # compute constraints accuracy through simple geometric rules
         accuracy = validate_constrains(dec_triples, boxes_pred, None, None, model.vocab, accuracy, with_norm=model.type_ != 'sln')
 
-    if export_3d:
+    if export_3d: #! 保存预测的shapes,box
         # export box and shape predictions for future evaluation
         result_path = os.path.join(args.exp, 'results')
         if not os.path.exists(result_path):
             # Create a new directory for results
             os.makedirs(result_path)
-        shape_filename = os.path.join(result_path, 'shapes_' + ('large' if datasize else 'small') + '.json')
-        box_filename = os.path.join(result_path, 'boxes_' + ('large' if datasize else 'small') + '.json')
+        shape_filename = os.path.join(result_path, 'shapes_' + '.json')
+        box_filename = os.path.join(result_path, 'boxes_' + '.json')
         json.dump(all_pred_boxes_exp, open(box_filename, 'w')) # 'dis_nomani_boxes_large.json'
         json.dump(all_pred_shapes_exp, open(shape_filename, 'w'))
 
-    if with_diversity:
+    if with_diversity:#!X
         print("DIVERSITY:")
         print("\tShape (Avg. Chamfer Distance) = %f" % (np.mean(all_diversity_chamfer)))
         print("\tBox (Std. metric size and location) = %f, %f" % (
             np.mean(np.mean(all_diversity_boxes, axis=0)[:3]),
             np.mean(np.mean(all_diversity_boxes, axis=0)[3:])))
         print("\tAngle (Std.) %s = %f" % (k, np.mean(all_diversity_angles)))
-
+    
+    print(f"GenerationMode_accuracy: {accuracy}")
+    
     keys = list(accuracy.keys())
     for dic, typ in [(accuracy, "acc")]:
 
-        print('{} & {:.2f} & {:.2f} & {:.2f} & {:.2f} &{:.2f} & {:.2f}'.format(typ, np.mean([np.mean(dic[keys[0]]), np.mean(dic[keys[1]])]),
-                                                                               np.mean([np.mean(dic[keys[2]]), np.mean(dic[keys[3]])]), np.mean([np.mean(dic[keys[4]]), np.mean(dic[keys[5]])]),
-                                                                               np.mean([np.mean(dic[keys[6]]), np.mean(dic[keys[7]])]), np.mean(dic[keys[8]]), np.mean(dic[keys[9]])))
+        print('{} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} '.format(typ, np.mean(dic[keys[0]]), np.mean(dic[keys[1]]), np.mean(dic[keys[2]]), np.mean(dic[keys[3]]), np.mean(dic[keys[4]]), np.mean(dic[keys[5]]), np.mean(dic[keys[6]])))
         print('means of mean: {:.2f}'.format(np.mean([np.mean([np.mean(dic[keys[0]]), np.mean(dic[keys[1]])]),
-                                                      np.mean([np.mean(dic[keys[2]]), np.mean(dic[keys[3]])]), np.mean([np.mean(dic[keys[4]]), np.mean(dic[keys[5]])]),
-                                                      np.mean([np.mean(dic[keys[6]]), np.mean(dic[keys[7]])]), np.mean(dic[keys[8]])])))
+                                                      np.mean([np.mean(dic[keys[2]]), np.mean(dic[keys[3]])]), np.mean(dic[keys[4]]), np.mean(dic[keys[5]]), np.mean(dic[keys[6]]) ])))
 
 
 def normalize(vertices, scale=1):
