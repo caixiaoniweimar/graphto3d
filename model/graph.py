@@ -105,7 +105,8 @@ class GraphTripleConv(nn.Module):
         assert pooling in ['sum', 'avg', 'wAvg'], 'Invalid pooling "%s"' % pooling
 
         self.pooling = pooling
-        net1_layers = [2 * input_dim_obj + input_dim_pred, hidden_dim, 2 * hidden_dim + output_dim]
+
+        net1_layers = [2 * input_dim_obj + input_dim_pred, hidden_dim, 2 * hidden_dim + output_dim]#1024,512,1488
         net1_layers = [l for l in net1_layers if l is not None]
         self.net1 = build_mlp(net1_layers, batch_norm=mlp_normalization)
         self.net1.apply(_init_weights)
@@ -143,20 +144,13 @@ class GraphTripleConv(nn.Module):
         o_idx = edges[:, 1].contiguous()
 
         # Get current vectors for subjects and objects; these have shape (num_triples, Din)
-        cur_s_vecs = obj_vecs[s_idx]  #[338, 256]
-        cur_o_vecs = obj_vecs[o_idx]  #[338, 256]
-
-
+        cur_s_vecs = obj_vecs[s_idx]  
+        cur_o_vecs = obj_vecs[o_idx]  
+        
         # Get current vectors for triples; shape is (num_triples, 3 * Din)
         # Pass through net1 to get new triple vecs; shape is (num_triples, 2 * H + Dout)
-        cur_t_vecs = torch.cat([cur_s_vecs, pred_vecs, cur_o_vecs], dim=1)
-        #print(f"cur_t_vecs: {cur_s_vecs.shape}, {pred_vecs.shape}, {cur_o_vecs.shape}, {cur_t_vecs.shape}")
-        """ for i, layer in enumerate(self.net1):
-            if hasattr(layer, 'weight'):
-                print(f'Layer {i} weight shape: {layer.weight.shape}') """
-        #print(self.net1)
-        #print("Number of parameters:", sum(p.numel() for p in self.net1.parameters() if p.requires_grad))
-        new_t_vecs = self.net1(cur_t_vecs)
+        cur_t_vecs = torch.cat([cur_s_vecs, pred_vecs, cur_o_vecs], dim=1)#! 一个三元组中的主语、谓词和宾语的特征向量拼接起来
+        new_t_vecs = self.net1(cur_t_vecs)#! 通过一个全连接神经网络（MLP）对特征进行非线性变换->提取更复杂的特征
 
         # Break apart into new s, p, and o vecs; s and o vecs have shape (num_triples, H) and
         # p vecs have shape (num_triples, Dout)
@@ -180,7 +174,7 @@ class GraphTripleConv(nn.Module):
         # we first need to expand the indices to have shape (num_triples, D)
         s_idx_exp = s_idx.view(-1, 1).expand_as(new_s_vecs)
         o_idx_exp = o_idx.view(-1, 1).expand_as(new_o_vecs)
-        pooled_obj_vecs = pooled_obj_vecs.scatter_add(0, s_idx_exp, new_s_vecs)
+        pooled_obj_vecs = pooled_obj_vecs.scatter_add(0, s_idx_exp, new_s_vecs) #!将变换后的主语和宾语的特征向量加和到宾语和主语的池化向量中
         pooled_obj_vecs = pooled_obj_vecs.scatter_add(0, o_idx_exp, new_o_vecs)
 
         if self.pooling == 'wAvg':
@@ -204,7 +198,7 @@ class GraphTripleConv(nn.Module):
             # so this will not affect them.
             obj_counts = obj_counts.clamp(min=1)
             pooled_obj_vecs = pooled_obj_vecs / obj_counts.view(-1, 1)
-
+            #! 进行正规化处理（每个对象的池化向量被它出现的次数（即它作为主语或宾语出现的三元组的数量）进行除法操作，这样可以防止某个对象出现次数过多而对最后的结果产生过大影响。
         # Send pooled object vectors through net2 to get output object vectors,
         # of shape (num_objs, Dout)
         new_obj_vecs = self.net2(pooled_obj_vecs)

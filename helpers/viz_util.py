@@ -91,12 +91,11 @@ def load_semantic_scene_graphs(json_relationships, json_objects):
             if scan not in scene_graphs:
                 scene_graphs[scan] = {}
                 scene_graphs[scan]['objects'] = []
-                #raise ValueError("WARNING: no objects for this scene")
+
             scene_graphs[scan]['relationships'] = []
             for k in s["objects"].keys():
                 ob = s['objects'][k]
                 for i,o in enumerate(scene_graphs_obj[scan]['objects']):
-                    #print(f"{scan} - {o['global_id']} - {k}")
                     if int(o['global_id']) == int(k):
                         inst = i
                         break

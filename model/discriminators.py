@@ -43,6 +43,7 @@ class ObjBoxDiscriminator(nn.Module):
             x.requires_grad = False
         else:
             y = self.D(x)
+    #! 输出 y 是一个介于 0 和 1 之间的概率值，表示输入的边界框和物体类别配置是否合理。
         return y, reg
 
 

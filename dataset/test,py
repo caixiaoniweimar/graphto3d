@@ -1,0 +1,6 @@
+import os
+import pickle
+feats_path = '/media/caixiaoni/xiaonicai-u/test_pipeline_dataset/raw/7b4acb843fd4b0b335836c728d324152/network2_features_7b4acb843fd4b0b335836c728d324152_0103_6_scene-X-X-cup_type-X-X-on_goal.pkl'
+if os.path.exists(feats_path):
+    feats_dic = pickle.load(open(feats_path, 'rb'))
+    print(feats_dic.keys())

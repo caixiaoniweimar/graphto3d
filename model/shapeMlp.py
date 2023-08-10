@@ -130,7 +130,7 @@ class ShapeMLP(nn.Module):
 
             try:
                 objs, triples, tight_boxes,  objs_to_scene, triples_to_scene = data['encoder']['objs'], \
-                                                                               data['encoder']['tripltes'], \
+                                                                               data['encoder']['triples'], \
                                                                                data['encoder']['boxes'], \
                                                                                data['encoder']['obj_to_scene'], \
                                                                                data['encoder']['tiple_to_scene']
