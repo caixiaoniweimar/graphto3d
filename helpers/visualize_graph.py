@@ -34,10 +34,7 @@ def draw_edges(g, graph_relationships, relationships, rel_filter_in, rel_filter_
 		g.edge(str(edge_obj_sub[0]), str(edge_obj_sub[1]), label=rels, color='grey')
 
 
-def run(use_sampled_graphs=True, scan_id="4d3d82b6-8cf4-2e04-830a-4303fa0e79c7", split=None, with_manipulation=False,
-				data_path='./GT', outfolder="./vis_graphs/", graphfile='graphs_layout.yml'):
-
-
+def run(scan_id, data_path, outfolder):
 	# use this option to read scene graphs from the dataset
 	relationships_json = os.path.join(data_path, 'relationships_validation.json') #"relationships_train.json")
 	objects_json = os.path.join(data_path, "objects.json")
@@ -47,7 +44,7 @@ def run(use_sampled_graphs=True, scan_id="4d3d82b6-8cf4-2e04-830a-4303fa0e79c7",
 	graph = viz_util.load_semantic_scene_graphs(relationships_json, objects_json)
 
 	filter_dict_in = [] 
-	filter_dict_out = [] # ["left", "right", "behind", "front", "same as", "same symmetry as", "bigger than", "lower than", "higher than", "close by"]
+	filter_dict_out = [] 
 	for scan_id in [scan_id]:
 		visualize_scene_graph(graph[scan_id], relationships, filter_dict_in, filter_dict_out, [], "visualize_scene_graph", scan_id=scan_id,
 													outfolder=outfolder)
@@ -55,6 +52,5 @@ def run(use_sampled_graphs=True, scan_id="4d3d82b6-8cf4-2e04-830a-4303fa0e79c7",
 	idx = [str(o['global_id']) for o in graph[scan_id]['objects']]
 	color = [o['color'] for o in graph[scan_id]['objects']]
 	# return used colors so that they can be used for 3D model visualization
-	#print(dict(zip(idx, color)))
 	return dict(zip(idx, color))
 

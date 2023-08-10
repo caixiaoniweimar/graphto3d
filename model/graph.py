@@ -105,6 +105,9 @@ class GraphTripleConv(nn.Module):
         assert pooling in ['sum', 'avg', 'wAvg'], 'Invalid pooling "%s"' % pooling
 
         self.pooling = pooling
+        #print(f"108 - {input_dim_obj}, {input_dim_pred}, {hidden_dim}, {output_dim}")
+
+        #768,512,1280
         net1_layers = [2 * input_dim_obj + input_dim_pred, hidden_dim, 2 * hidden_dim + output_dim]
         net1_layers = [l for l in net1_layers if l is not None]
         self.net1 = build_mlp(net1_layers, batch_norm=mlp_normalization)
@@ -244,6 +247,7 @@ class GraphTripleConvNet(nn.Module):
             'mlp_normalization': mlp_normalization,
             'output_dim': output_dim
         }
+        #print(f"247 - {input_dim_obj}, {input_dim_pred}")
         for i in range(self.num_layers):
             if output_dim is not None and i >=  self.num_layers - 1:
                 self.gconvs.append(GraphTripleConv(**gconv_kwargs_out))

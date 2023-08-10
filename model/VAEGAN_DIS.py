@@ -471,7 +471,7 @@ class Sg2ScVAEModel(nn.Module):
                 continue
             try:
                 objs, triples, tight_boxes, objs_to_scene, triples_to_scene = data['decoder']['objs'], \
-                                                                              data['decoder']['tripltes'], \
+                                                                              data['decoder']['triples'], \
                                                                               data['decoder']['boxes'], \
                                                                               data['decoder']['obj_to_scene'], \
                                                                               data['decoder']['tiple_to_scene']

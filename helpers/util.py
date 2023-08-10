@@ -50,7 +50,8 @@ def params_to_8points_no_rot(box):
         corner_y = c_y + offset[1] * half_w
         corner_z = c_z + offset[2] * half_h
         corners.append((corner_x, corner_y, corner_z))
-    corners = np.array(corners)
+    #corners = corners.cpu().detach().numpy()
+    #corners = np.array(corners)
 
     #points = np.asarray(points)
     #points += np.expand_dims(np.array([cx.item(), cy.item(), cz.item()]), 0)
@@ -58,7 +59,7 @@ def params_to_8points_no_rot(box):
     return corners
 
 
-def fit_shapes_to_box(box, shape, withangle=True):
+def fit_shapes_to_box(box, shape, withangle=False):
     """ Given normalized shape, transform it to fit the input bounding box.
         Expects denormalized bounding box with optional angle channel in degrees
         :param box: tensor
@@ -77,9 +78,9 @@ def fit_shapes_to_box(box, shape, withangle=True):
     shape_size = np.max(shape, axis=0) - np.min(shape, axis=0)#! 计算输入形状 shape 的尺寸（即最大坐标值和最小坐标值之差）。
     shape = shape / shape_size#! 将输入形状 shape 除以其尺寸以归一化
     shape *= box[:3] #! 将归一化的形状 shape 乘以输入边界框 box 的前三个元素, 从而将 shape 缩放为适应 box 的大小。
-    if withangle:#!X
+    #if withangle:#!X
         # rotate
-        shape = (get_rotation(z, degree=True).astype("float32") @ shape.T).T
+    #    shape = (get_rotation(z, degree=True).astype("float32") @ shape.T).T
     # translate
     shape += [cx, cy, cz]
 
@@ -138,8 +139,8 @@ def normalize_box_params(box_params, scale=3):
     :param scale: float scalar that scales the parameter distribution
     :return: normalized box parameters array of shape [7]
     """
-    mean = np.array([0.22877924,  0.24143317,  0.14675027 , 0.00316609, -0.00581015,  0.21923892])#np.array([ 2.42144732e-01,  2.35105852e-01,  1.53590141e-01, -1.54968627e-04, -2.68763962e-02,  2.23784580e-01 ])
-    std = np.array([0.26284911, 0.2582661 , 0.17480837, 0.13364749 ,0.14443358 ,0.11097717])#np.array([ 0.27346058, 0.23751527, 0.18529049, 0.12504842, 0.13313938 ,0.12407406 ])
+    mean = np.array([0.2610482,   0.22473196,  0.14623462 , 0.0010283 , -0.02288815 , 0.20876316])#np.array([ 2.42144732e-01,  2.35105852e-01,  1.53590141e-01, -1.54968627e-04, -2.68763962e-02,  2.23784580e-01 ])
+    std = np.array([0.31285113 ,0.21937416, 0.17070778, 0.14874465, 0.1200992 , 0.11501499])#np.array([ 0.27346058, 0.23751527, 0.18529049, 0.12504842, 0.13313938 ,0.12407406 ])
 
     return scale * ((box_params - mean) / std)
 
@@ -153,8 +154,8 @@ def denormalize_box_params(box_params, scale=3, params=6):
     :return: denormalized box parameters array of shape [params]
     """
     if params == 6:
-        mean = np.array([0.22877924,  0.24143317,  0.14675027 , 0.00316609, -0.00581015,  0.21923892])#np.array([ 2.42144732e-01,  2.35105852e-01,  1.53590141e-01, -1.54968627e-04, -2.68763962e-02,  2.23784580e-01 ])
-        std = np.array([0.26284911, 0.2582661 , 0.17480837, 0.13364749 ,0.14443358 ,0.11097717])#np.array([ 0.27346058, 0.23751527, 0.18529049, 0.12504842, 0.13313938 ,0.12407406 ])
+        mean = np.array([0.2610482,   0.22473196,  0.14623462 , 0.0010283 , -0.02288815 , 0.20876316])#np.array([ 2.42144732e-01,  2.35105852e-01,  1.53590141e-01, -1.54968627e-04, -2.68763962e-02,  2.23784580e-01 ])
+        std = np.array([0.31285113 ,0.21937416, 0.17070778, 0.14874465, 0.1200992 , 0.11501499])#np.array([ 0.27346058, 0.23751527, 0.18529049, 0.12504842, 0.13313938 ,0.12407406 ])
     else:
         raise NotImplementedError
     return (box_params * std) / scale + mean
@@ -168,8 +169,8 @@ def batch_torch_denormalize_box_params(box_params, scale=3):
     :return: float tensor of shape [N, 6], the denormalized box parameters
     """
 
-    mean = torch.tensor([ 0.22877924,  0.24143317,  0.14675027 , 0.00316609, -0.00581015,  0.21923892 ]).reshape(1,-1).float().cuda()#torch.tensor([ 2.42144732e-01,  2.35105852e-01,  1.53590141e-01, -1.54968627e-04, -2.68763962e-02,  2.23784580e-01 ]).reshape(1,-1).float().cuda()
-    std = torch.tensor([ 0.26284911, 0.2582661 , 0.17480837, 0.13364749 ,0.14443358 ,0.11097717]).reshape(1,-1).float().cuda()#torch.tensor([ 0.27346058, 0.23751527, 0.18529049, 0.12504842, 0.13313938 ,0.12407406 ]).reshape(1,-1).float().cuda()
+    mean = torch.tensor([0.2610482,   0.22473196,  0.14623462 , 0.0010283 , -0.02288815 , 0.20876316 ]).reshape(1,-1).float().cuda()#torch.tensor([ 2.42144732e-01,  2.35105852e-01,  1.53590141e-01, -1.54968627e-04, -2.68763962e-02,  2.23784580e-01 ]).reshape(1,-1).float().cuda()
+    std = torch.tensor([ 0.31285113 ,0.21937416, 0.17070778, 0.14874465, 0.1200992 , 0.11501499]).reshape(1,-1).float().cuda()#torch.tensor([ 0.27346058, 0.23751527, 0.18529049, 0.12504842, 0.13313938 ,0.12407406 ]).reshape(1,-1).float().cuda()
 
     return (box_params * std) / scale + mean
 

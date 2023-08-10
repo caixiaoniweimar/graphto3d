@@ -129,6 +129,7 @@ class AE_AtlasNet(nn.Module):
         for i in range(0, self.nb_primitives):
             rand_grid = Variable(torch.cuda.FloatTensor(x.size(0), 2, self.num_points // self.nb_primitives))
             rand_grid.data.uniform_(0, 1)
+            print(f"132 - atlasnet {rand_grid.size(2)}")
             y = x.unsqueeze(2).expand(x.size(0), x.size(1), rand_grid.size(2)).contiguous()
             y = torch.cat((rand_grid, y), 1).contiguous()
             outs.append(self.decoder[i](y))

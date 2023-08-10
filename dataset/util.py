@@ -123,34 +123,43 @@ def get_label_name_to_global_id(file):
         raise ValueError(f"labelName2classId or classId2ClassName of {file} shouldn't be empty!")
     return labelName2InstanceId, classId2ClassName
 
-def get_points_instances_from_mesh(file, labelName2InstanceId):
+def farthest_point_sampling(vertices: np.ndarray, num_samples: int) -> np.ndarray:
+    vertices = np.array(vertices)
+    num_vertices = vertices.shape[0]
+    if num_samples >= num_vertices:
+        return vertices
+    centroids = np.zeros((num_samples, 3))
+    centroids[0] = vertices[np.random.randint(num_vertices)]#!随机选择输入顶点集中的一个顶点作为第一个提取的顶点
+    distance = np.linalg.norm(vertices - centroids[0], axis=1)#! 计算输入顶点集中的所有顶点与第一个提取的顶点之间的距离，并将结果存储在distance数组中
+    for i in range(1, num_samples):#! 开始一个循环，从第二个提取的顶点开始，直到提取num_samples个顶点。
+        centroids[i] = vertices[np.argmax(distance)] #! 找到距离数组distance中具有最大值的索引，并将对应的输入顶点作为下一个提取的顶点存储在centroids中。
+        distance = np.minimum(distance, np.linalg.norm(vertices - centroids[i], axis=1))#! 更新distance数组，将每个顶点与当前提取的顶点之间的距离与原始距离相比较，保留较小的距离值。这一步用于确保在选择下一个提取的顶点时，我们找到的是距离当前已提取顶点集的最远顶点。
+    #print(len(centroids))
+    return centroids
+
+def get_points_instances_from_mesh(file, labelName2InstanceId, num_samples=5625):
     """ 一行一行读obj, 若是v, 则是vertex, 若是o, 则是object的name, 每存储一个v, 则存储一个instance_id
     需要name_to_id的dict
     Input: file: e.g. .../7b4acb843fd4b0b335836c728d324152_0001_5_scene-X-bowl-X_mid.obj 
            labelName2InstanceId { "cup_1":50 ....}
     Output: vertices(num_of_vertices,3); instance(num_of_vertices, ) """    
-    points_list = []
-    instances_list = []
+    instances_points = {}
+
     with open(file, 'r') as f:
         for line in f:
             if line.startswith('o'):
                 label_name = line.strip()[2:]
                 instance_id = labelName2InstanceId[label_name]
+                instances_points[instance_id] = []
             elif line.startswith('v'):
                 vertex = list(map(float, line.split()[1:]))
                 if len(vertex) == 3:
-                    points_list.append(vertex)
-                    instances_list.append(instance_id)
-
-    """     points = np.array(points_list)
-        instances = np.array(instances_list)
-        # Get the unique rows and their corresponding indices
-        unique_rows, indices = np.unique(points, axis=0, return_index=True)
-        
-        # Update instances_list to remove instances corresponding to duplicate points
-        instances = np.array(instances)[indices]
-
-        # Update points_list to contain only unique points
-        points = np.array([list(row) for row in unique_rows])
-        return points, instances """
-    return np.array(points_list), np.array(instances_list)
+                    instances_points[instance_id].append(vertex)
+    #利用fps采取点
+    instances = np.array([])
+    points = np.empty((0,3))
+    for id in instances_points:
+        instances_points[id] = farthest_point_sampling(instances_points[id], num_samples=num_samples)
+        instances = np.concatenate(( instances, np.full(len(instances_points[id]),id) ))
+        points = np.concatenate(( points,  instances_points[id] ))
+    return points, instances

@@ -13,38 +13,33 @@ from helpers.util import normalize_box_params, denormalize_box_params, get_rotat
 import random
 import pickle
 
-
 class RIODatasetSceneGraph(data.Dataset):
     def __init__(self, root, root_raw,
-                 label_file, npoints=2500, class_choice=None,
-                 split='train', data_augmentation=True, shuffle_objs=False,
-                 pass_scan_id=False, use_points=True,
-                 use_scene_rels=False, data_len=None,
+                 label_file, npoints=2500,
+                 split='train', shuffle_objs=False,
+                 use_points=False, use_scene_rels=False,
                  with_changes=True, vae_baseline=False,
                  scale_func='diag', eval=False, eval_type='addition',
                  atlas=None, path2atlas=None, with_feats=False,
-                 seed=True, use_splits=False, large=False,
-                 use_rio27=False, recompute_feats=False, use_canonical=False,
-                 crop_floor=False, center_scene_to_floor=False):
+                 seed=True, recompute_feats=False,
+                 features_gt=None):
 
         # options currently not used in the experiments
         # for partial scenes (use_splits), it crops the floor around the objects that are part of that scene fraction
-        self.crop_floor = crop_floor
-        self.center_scene_to_floor = center_scene_to_floor
 
         self.seed = seed
         self.with_feats = with_feats
         self.atlas = atlas
         self.path2atlas = path2atlas
-        self.large = large
         self.recompute_feats = recompute_feats
-
-        self.use_canonical = use_canonical
 
         if eval and seed:
             np.random.seed(47)
             torch.manual_seed(47)
             random.seed(47)
+
+        path2atlas, path2atlas_trained_model = os.path.split(self.path2atlas)
+        self.featres_gt_json_path = os.path.join(path2atlas, features_gt)
 
         self.scale_func = scale_func
         self.with_changes = with_changes
@@ -55,8 +50,6 @@ class RIODatasetSceneGraph(data.Dataset):
         self.catfile = os.path.join(self.root, 'classes.txt')
         self.cat = {}
         self.scans = []
-        self.data_augmentation = data_augmentation
-        self.data_len = data_len
         self.vae_baseline = vae_baseline
         self.use_scene_rels = use_scene_rels
 
@@ -77,7 +70,6 @@ class RIODatasetSceneGraph(data.Dataset):
         self.relationships = self.read_relationships(os.path.join(self.root, 'relationships.txt'))#!所有的relationship名称, 包括none
 
         # uses scene sections of up to 9 objects (from 3DSSG) if true, and full scenes otherwise
-        self.use_splits = use_splits #! False
         if split == 'train_scenes': # training set
             splits_fname = 'relationships_train'
             self.rel_json_file = os.path.join(self.root, '{}.json'.format(splits_fname))
@@ -96,26 +88,17 @@ class RIODatasetSceneGraph(data.Dataset):
         self.padding = 0.2
         self.eval = eval
 
-        self.pass_scan_id = pass_scan_id
-
         self.shuffle_objs = shuffle_objs
 
         self.root_raw = root_raw
         if self.root_raw == '':
             self.root_raw = os.path.join(self.root, "raw")
 
-        # option to map object classes to a smaller class set from 3RScan
-        # not used in the current paper results
-        self.use_rio27 = use_rio27#! False
-
         with open(self.catfile, 'r') as f:
             for line in f:
                 category = line.rstrip()
-                #if category!="obstacle":
                 self.cat[category] = category
         #! cat: {'_scene_': '_scene_', 'bowl': 'bowl', 'box': 'box', 'can': 'can', 'cup': 'cup', 'fork': 'fork', 'knife': 'knife', 'pitcher': 'pitcher', 'plate': 'plate', 'support_table': 'support_table', 'tablespoon': 'tablespoon', 'teapot': 'teapot', 'teaspoon': 'teaspoon', 'obstacle': 'obstacle'}
-        if not class_choice is None:#! 不进入
-            self.cat = {k: v for k, v in self.cat.items() if k in class_choice}
         
         self.classes = dict(zip(sorted(self.cat), range(len(self.cat))))
         #! classes: {'_scene_': 0, 'bowl': 1, 'box': 2, 'can': 3, 'cup': 4, 'fork': 5, 'knife': 6, 'obstacle': 7, 'pitcher': 8, 'plate': 9, 'support_table': 10, 'tablespoon': 11, 'teapot': 12, 'teaspoon': 13}
@@ -124,16 +107,8 @@ class RIODatasetSceneGraph(data.Dataset):
 
         points_classes_idx = []
         for pc in points_classes:
-            if class_choice is not None:
-                if pc in self.classes:
-                    points_classes_idx.append(self.classes[pc])
-                else:
-                    points_classes_idx.append(0)
-            else:
-                if not use_rio27:
-                    points_classes_idx.append(self.classes[pc])#! 所选的特定的id
-                else:
-                    points_classes_idx.append(int(self.vocab_rio27['rio27_name_to_idx'][pc]))
+            points_classes_idx.append(self.classes[pc])#! 所选的特定的id
+
         
         self.point_classes_idx = points_classes_idx + [0] #! [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 0]
 
@@ -168,7 +143,7 @@ class RIODatasetSceneGraph(data.Dataset):
 
                 relationships = []
                 for realationship in scene["relationships"]:
-                    realationship[2] -= 1 #! id为6, 在txt中为5
+                    realationship[2] -= 1  #! 304行又把-1加回去
                     relationships.append(realationship)
 
                 # for every scene in rel json, we append the scene id
@@ -182,12 +157,6 @@ class RIODatasetSceneGraph(data.Dataset):
                     try:
                         boxes[int(k)] = {}
                         boxes[int(k)]['param6'] = box_data[scene["scene_id"]][k]["param6"]
-                        if self.use_canonical:#! 不进入
-                            if "direction" in box_data[scene["scene_id"]][k].keys():
-                                boxes[int(k)]['direction'] = box_data[scene["scene_id"]][k]["direction"]
-                            else:
-                                boxes[int(k)]['direction'] = 0
-                            raise ValueError("use_canonical should be False")
                     except:
                         # probably box was not saved because there were 0 points in the instance!
                         continue
@@ -207,156 +176,72 @@ class RIODatasetSceneGraph(data.Dataset):
                 relationships.append(relationship)
         return relationships
 
-    def norm_tensor(self, p, params7=None, scale=False, center=True, rotation=False, scale_func='diag'):
-#(obj_pointset, denormalize_box_params(tight_boxes[i]),scale=True, rotation=self.use_canonical, scale_func=self.scale_func)
-        """ Given a set of points of an object and (optionally) a oriented 3D box, normalize points
-
-        :param p: tensor of 3D pointset
-        :param params7: bounding box parameters [W, L, H, Cx, Cy, Cy, Z]
-        :param scale: boolean, if true apply scaling to pointset p according to scale_func
-        :param center: boolean, if true normalize the center of points to 0,0,0
-        :param rotation: boolean, if true rotate points based on the box rotation in param7
-        :param scale_func: string specifying the function used for scaling. 'diag' normalizes the diagonal to length 1.
-        'whl' sets each dimension to range [-1,1].
-        :return: the normalized tensor of 3D pointset
-        """
-        if center:
-            if params7 is None:
-                # this is center of mass
-                mean = torch.mean(p, dim=0)
-            else:
-                # get center from box center if available
-                mean = torch.from_numpy(params7[3:6].astype("float32"))
-            p -= mean.unsqueeze(0)#!将点云数据p中心化到原点，即每个点减去所有点的平均值
-        if rotation and params7 is not None: #! 不进入
-            #? params7中保存的旋转角度，对点云数据p进行旋转
-            p = (torch.from_numpy(get_rotation(-params7[-1], degree=False).astype("float32")) @ p.T).T
-        if scale and params7 is not None:
-            # first if needed rotate to canonical rotation
-            # apply scaling
-            # if needed rotate back
-            if not rotation and len(params7)>6:#将点集 p 绕着z轴逆时针旋转了 -params7[-1] 度
-                p = (torch.from_numpy(get_rotation(-params7[-1], degree=False).astype("float32")) @ p.T).T
-                raise ValueError("len(params7) should only be 6 without degree")
-            #! 这是因为在缩放点云时，先旋转到标准朝向进行缩放可以保证缩放后点云的大小与形状保持不变。
-            if scale_func == 'diag':
-                #! 将点云数据p进行缩放，缩放比例由params7中的尺寸信息确定
-                # OPTION 1: normalize diagonal = 1
-                norm2 = np.linalg.norm(params7[:3].astype("float32"))
-                p /= norm2
-            elif scale_func == 'whl':
-                # OPTION 2: normalize each axis by H, W, L
-                norm2 = torch.from_numpy(params7[:3].astype("float32")).reshape(1, 3)
-                min_p = p.min(0)[0]
-                p = ((p - min_p) / norm2) * 2. - 1.  # between -1 and 1 in all directions
-                raise ValueError("scale_func should not be whl")
-            elif scale_func == 'whl_after':
-                norm2 = p.max(0)[0] - p.min(0)[0]
-                min_p = p.min(0)[0]
-                p = ((p - min_p) / norm2) * 2. - 1.  # between -1 and 1 in all directions
-                raise ValueError("scale_func should not be whl_after")
-            else:
-                raise NotImplementedError
-            if not rotation and len(params7)>6: #将点集 p 绕着z轴顺时针旋转了 params7[-1] 度
-                p = (torch.from_numpy(get_rotation(params7[-1], degree=False).astype("float32")) @ p.T).T
-                raise ValueError("len(params7) should only be 6 without degree")
-        return p
-
     def __getitem__(self, index):
         scene_id = self.scans[index]
-        #print(f"Current working on {scene_id}")
-        #root_raw: ..../test_pipeline_dataset/raw/{table_id}/{scene_id}.obj
         file = os.path.join(self.root_raw, scene_id.split('_')[0], scene_id+self.label_file)
         if not os.path.exists(file):
             raise FileNotFoundError(f"Cannot find {scene_id}.obj file. Path: {file}")
 
-        # labelName2InstanceId, e.g. {'cup_7': 37, 'bowl_3': 20, 'plate_10': 14, '7b4acb843fd4b0b335836c728d324152_support_table': 117}
-        # instanceId2class {37: 'cup', 20: 'bowl', 14: 'plate', 117: 'support_table'}
+        #!labelName2InstanceId, e.g. {'plate_6': 10, '2362ec480b3e9baa4fd5721982c508ad_support_table': 109, 'fork_1': 1, 'knife_1': 2}
+        #!instanceId2class {10: 'plate', 109: 'support_table', 1: 'fork', 2: 'knife'}
         labelName2InstanceId, instanceId2class = util.get_label_name_to_global_id(file)
-        selected_instances = list(self.objs_json[scene_id].keys())#! all instance_ids 与下行的keys相同
+        selected_instances = list(self.objs_json[scene_id].keys())#! all instance_ids 与下行的keys相同 [10,109,1,2]
         keys = list(instanceId2class.keys()) #! all instance_ids
 
         if self.shuffle_objs:
-            random.shuffle(keys)
+            random.shuffle(keys) #![1,2,109,10]
         feats_in = None
         # If true, expected paths to saved atlasnet features will be set here
         if self.with_feats and self.path2atlas is not None:
             _, atlasname = os.path.split(self.path2atlas)
             atlasname = atlasname.split('.')[0]
 
-
             feats_path = os.path.join(self.root_raw, scene_id.split('_')[0], '{}_{}_{}.pkl'.format(atlasname,'features',scene_id))
 
             if self.recompute_feats:
                 feats_path += 'tmp'
-        # Load points if with features but features cannot be found or are forced to be recomputed
-        # Loads points if use_points is set to true
-        if (self.with_feats and (not os.path.exists(feats_path) or self.recompute_feats)) or self.use_points:
-            if file in self.files: # Caching
-                (points, instances) = self.files[file]
-            else:
-                points, instances = util.get_points_instances_from_mesh(file, labelName2InstanceId)#! points: 所有的vertices, instances: 对应的instance_id(global_id)
-
-                if self.fm.user_free > 5:
-                    self.files[file] = (points, instances)
 
         instance2mask = {}
         instance2mask[0] = 0 
 
-        cat = [] #! 存储当前scene, 存在的class_id
+        cat = [] #! 存储当前scene, 存在的class_id [5, 6, 10, 9]
         tight_boxes = []
 
         counter = 0
 
-        instances_order = []#! 添加instance_id
-        selected_shapes = []
+        instances_order = []#! 添加instance_id#! [1,2,109,10] 与key顺序相同 instanceId2class {10: 'plate', 109: 'support_table', 1: 'fork', 2: 'knife'}
 
-        #!self.classes: {'fork': 1, 'knife': 2, 'tablespoon': 3, 'teaspoon': 4, 'plate': 5, 'bowl': 6, 'cup': 7, 'teapot': 8, 'pitcher': 9, 'can': 10, 'box': 11, 'support_table': 13}
-        for key in keys: #! 所有的instance_ids e.g., [37,20,14,117]
+        #!self.classes: {'_scene_': 0, 'bowl': 1, 'box': 2, 'can': 3, 'cup': 4, 'fork': 5, 'knife': 6, 'obstacle': 7, 'pitcher': 8, 'plate': 9, 'support_table': 10, 'tablespoon': 11, 'teapot': 12, 'teaspoon': 13}
+        
+        #! instance2mask {0: 0, 1: 1, 2: 2, 109: 3, 10: 4}  instance_id:instance在场景中的编号/索引
+        for key in keys: #! 所有的instance_ids e.g., [1,2,109,10]
             # get objects from the selected list of classes of 3dssg
-            scene_instance_id = key #37
-            scene_instance_class = instanceId2class[key] #cup
+            scene_instance_id = key #!1
+            scene_instance_class = instanceId2class[key] #!fork
             scene_class_id = -1
             if scene_instance_class in self.classes:
-                scene_class_id = self.classes[scene_instance_class] #cup的clas_id -> 7
+                scene_class_id = self.classes[scene_instance_class] #!fork的class_id -> 5
+            else:
+                raise ValueError(f"{scene_instance_class} must be in {self.classes}")
             
             if scene_class_id != -1 and key in selected_instances: #selected_instances与keys相同, 所以一定进入
                 instance2mask[scene_instance_id] = counter + 1 #
                 counter += 1
             else:#! scene_class_id == -1 -> 不存在self.classes中
-                print(key, selected_instances)
                 instance2mask[scene_instance_id] = 0
                 raise ValueError("scene_class_id should not be -1.")
             
             # mask to cat:
             if (scene_class_id >= 0) and (scene_instance_id > 0) and (key in selected_instances):#! 一定进入
-                if self.use_canonical:#! 不进入
-                    direction = self.tight_boxes_json[scene_id][key]['direction']
-                    if direction in [-1, 0, 6]:
-                        # skip invalid point clouds with ambiguous direction annotation
-                        selected_shapes.append(False)
-                    else:
-                        selected_shapes.append(True)
+
                 cat.append(scene_class_id)
                 bbox = self.tight_boxes_json[scene_id][key]['param6'].copy()
 
-                if self.use_canonical:#! 不进入
-                    if direction > 1 and direction < 5:
-                        # update direction-less angle with direction data (shifts it by 90 degree
-                        # for every added direction value
-                        bbox[6] += (direction - 1) * np.deg2rad(90)
-                        if direction == 2 or direction == 4:
-                            temp = bbox[0]
-                            bbox[0] = bbox[1]
-                            bbox[1] = temp
-                    # for other options, do not change the box
                 instances_order.append(key)
                 if not self.vae_baseline:#!network_type==shared!=sln则进入
                     bbox = normalize_box_params(bbox)
-                tight_boxes.append(bbox)
+                tight_boxes.append(bbox)#! 按照instances_order的顺序
         
-        #! instance2mask: {0: 0, 40: 1, 31: 2, 25: 3, 7: 4, 117: 5}
-
         if self.with_feats:
             # If precomputed features exist, we simply load them
             if os.path.exists(feats_path):
@@ -367,72 +252,59 @@ class RIODatasetSceneGraph(data.Dataset):
                 ordered_feats = []
                 for inst in instances_order:
                     feats_in_instance = inst == feats_order
-                    ordered_feats.append(feats_in[:-1][feats_in_instance])
+                    ordered_feats.append(feats_in[:-1][feats_in_instance]) 
                 ordered_feats.append(np.zeros([1, feats_in.shape[1]]))
                 feats_in = list(np.concatenate(ordered_feats, axis=0))
 
         # Sampling of points from object if they are loaded
+        #! instance2mask {0: 0, 1: 1, 2: 2, 109: 3, 10: 4} instance_id:instance在场景中的编号/索引
         if (self.with_feats and (not os.path.exists(feats_path) or feats_in is None)) or self.use_points:
-            masks = np.array(list(map(lambda l: instance2mask[l] if l in instance2mask.keys() else 0, instances)),
-                             dtype=np.int32) #! instanceid 映射到 maskid
-            num_pointsets = len(cat) + int(self.use_scene_rels)  # add zeros for the scene node
-            obj_points = torch.zeros([num_pointsets, self.npoints, 3])
+            instanceId2LabelName = {v: k for k, v in labelName2InstanceId.items()}
+            #! {10: 'plate_6', 109: '2362ec480b3e9baa4fd5721982c508ad_support_table', 1: 'fork_1', 2: 'knife_1'}
+            with open(self.featres_gt_json_path) as json_file:
+                objs_features_gt_dict = json.load(json_file)
+            objs_features_gt = []
+            
+            if_rotate_z_90_degree = False
+            keywords = ['plate', 'spoon']
+            if all( any(key in value for value in instanceId2LabelName.values()) for key in keywords):
+                if_rotate_z_90_degree = True
 
-            for i in range(len(cat)):#! 当前scene中存在的class_id
-                obj_pointset = points[np.where(masks == i + 1)[0], :] #! 根据mask_id获取对应class的point
+            for instance_id in instances_order:
+                labelname = instanceId2LabelName[instance_id]
+                if 'support_table' in labelname:
+                    labelname = labelname.split('_')[0]
+                if 'spoon' in labelname and if_rotate_z_90_degree:
+                    labelname = labelname+'_rotate_z_90'
+                objs_features_gt.append(objs_features_gt_dict[labelname][0])
 
-                if len(obj_pointset) >= self.npoints:
-                    choice = np.random.choice(len(obj_pointset), self.npoints, replace=False)
-                else:
-                    choice = np.arange(len(obj_pointset))
-                    # use repetitions to fill some more points
-                    choice2 = np.random.choice(len(obj_pointset), self.npoints - choice.shape[0], replace=True)
-                    choice = np.concatenate([choice, choice2], 0)
-                    random.shuffle(choice)
-
-                obj_pointset = obj_pointset[choice, :]
-                obj_pointset = torch.from_numpy(obj_pointset.astype(np.float32))
-
-                if not self.vae_baseline:#! network_type=shared进入, 对点云进行缩放
-                    obj_pointset = self.norm_tensor(obj_pointset, denormalize_box_params(tight_boxes[i]),
-                                           scale=True, rotation=self.use_canonical, scale_func=self.scale_func)
-                else:
-                    obj_pointset = self.norm_tensor(obj_pointset, np.asarray(tight_boxes[i]),
-                                                    scale=True, rotation=self.use_canonical, scale_func=self.scale_func)
-            obj_points[i] = obj_pointset
-        else:
-            obj_points = None
 
         triples = []
         rel_json = self.relationship_json[scene_id]
 
         for r in rel_json: # create relationship triplets from data
             if r[0] in instance2mask.keys() and r[1] in instance2mask.keys():  #r[0], r[1] -> instance_id
-                subject = instance2mask[r[0]]-1 #! 对应的mask_id -1, 因为obj_points[i] = obj_pointset, 这里i从0开始
+                subject = instance2mask[r[0]]-1 #! instance2mask[r[0] -> 实例在场景中的编号/索引 - 1, 最后一个node '_scene_' 放最后
                 object = instance2mask[r[1]]-1
-                predicate = r[2] #! 修改！！！:我们的GT predicate不需要+1, predicate left都是从1开始的
+                predicate = r[2] +1 
                 if subject >= 0 and object >= 0:
                     triples.append([subject, predicate, object])
             else:
                 continue     
         if self.use_scene_rels:
             # add _scene_ object and _in_scene_ connections
-            scene_idx = len(cat) #4
+            scene_idx = len(cat) #4  
             for i, ob in enumerate(cat): #!当前scene中的class_id(从0开始), 都和scene_idx(_scene_ object),有predicate-0: _in_scene_
-                triples.append([i, 0, scene_idx])
+                triples.append([i, 0, scene_idx])  #_in_scene_ 关系是从0开始的
             cat.append(0)
             # dummy scene box
             tight_boxes.append([-1, -1, -1, -1, -1, -1])
         output = {}
-        if self.use_points:#! X
-            output['scene'] = points
 
-        # if features are requested but the files don't exist, we run all loaded pointclouds through atlasnet
-        # to compute them and then save them for future usage
         if self.with_feats and (not os.path.exists(feats_path) or feats_in is None) and self.atlas is not None:
-            pf = torch.from_numpy(np.array(list(obj_points.numpy()), dtype=np.float32)).float().cuda().transpose(1,2)
-            with torch.no_grad():
-                feats = self.atlas.encoder(pf).detach().cpu().numpy()
+            feats = np.array(objs_features_gt)
+            feats_single = torch.zeros(1, 128)  
+            feats = np.vstack((feats, feats_single)) #! 添加最后一个(__node__)的feat
 
             feats_out = {}
             feats_out['feats'] = feats
@@ -441,17 +313,13 @@ class RIODatasetSceneGraph(data.Dataset):
 
             assert self.path2atlas is not None
             path = os.path.join(feats_path)
-            if self.recompute_feats:
-                path = path[:-3]
 
             pickle.dump(feats_out, open(path, 'wb'))
         # prepare outputs
         output['encoder'] = {}
         output['encoder']['objs'] = cat#! 当前scene所有的class_id + _scene_(0)
-        output['encoder']['triples'] = triples#! triples中的边id: mask_id - 1
+        output['encoder']['triples'] = triples
         output['encoder']['boxes'] = tight_boxes
-        if self.use_points:
-            output['encoder']['points'] = list(obj_points.numpy())
 
         if self.with_feats:
             output['encoder']['feats'] = feats_in
@@ -529,30 +397,23 @@ class RIODatasetSceneGraph(data.Dataset):
         最后，更新剩余节点的编号以确保它们在图中的顺序正确。函数返回被删除节点的索引。
         这个函数的目的是模拟模型在遇到图中物体被遮挡、丢失或者错误的情况下的行为，从而提高模型的鲁棒性和泛化能力。
         """
-        
-
         node_id = -1
         # dont remove layout components, like floor. those are essential -> #? 在我们的情况应该是support_table
         excluded = [13]
         trials = 0
-        #! {graph['objs']} = [6, 13, 9, 8, 3, 0]
-        #node-id: 在上方array的id
-        #print(f"528 - {graph['objs']}")
         while node_id < 0 or graph['objs'][node_id] in excluded:
             if trials > 100:
                 return -1
             trials += 1
             node_id = np.random.randint(len(graph['objs']) - 1)#不包含最后一个0
 
-        graph['objs'].pop(node_id)
-        #print(f"536 - {node_id}, {len(graph['feats'])}")
+        graph['objs'].pop(node_id)  #node_id 在场景中的编号/索引，不是Global_id   
         if self.use_points:
             graph['points'].pop(node_id)
         if self.with_feats:
             graph['feats'].pop(node_id)
         graph['boxes'].pop(node_id)
 
-        #print(f"536 - {graph['triples']}")
         to_rm = []
         for x in graph['triples']:
             sub, pred, obj = x
@@ -578,20 +439,11 @@ class RIODatasetSceneGraph(data.Dataset):
         :param interpretable: boolean, if true choose a subset of easy to interpret relations for the changes
         :return: index of changed triplet, a tuple of affected subject & object, and a boolean indicating if change happened
         """
-
-        # rels 26 -> 0
-        '''26 hanging in' '25 lying in' '24 cover' '23 build in' '22 standing in' '21 belonging to'
-         '20 part of' '19 leaning against' '18 connected to' '17 hanging on' '16 lying on' '15 standing on'
-         '14 attached to' '13 same as' '12 same symmetry as' '11 lower than' '10 higher than' '9 smaller than'
-         '8 bigger than' '7 inside' '6 close by' '5 behind' '4 front' '3 right' '2 left' '1 supported by'
-         '0: none'''
-        # subset of edge labels that are spatially interpretable (evaluatable via geometric contraints)
         interpretable_rels = [1,2,3,4] #! 修改！！！只更改上下左右 #[2, 3, 4, 5, 8, 9, 10, 11]
 
         did_change = False
         trials = 0
         excluded = [13]#! 修改 不动桌子[27]
-        eval_excluded = [13]#! 修改 不动桌子[27, 58, 155]
 
         while not did_change and trials < 1000:
             idx = np.random.randint(len(graph['triples']))
@@ -602,23 +454,14 @@ class RIODatasetSceneGraph(data.Dataset):
                 continue
             if graph['objs'][obj] in excluded or graph['objs'][sub] in excluded:
                 continue
-            # sub_cl, obj_cl = graph['objs'][sub], graph['objs'][obj]
-            #if interpretable:
-            if graph['objs'][obj] in eval_excluded or graph['objs'][sub] in eval_excluded: # don't use the floor
-                continue
             new_pred = interpretable_rels[np.random.randint(len(interpretable_rels))]
-            #else:
-            #    new_pred = np.random.randint(1, 27)
 
             graph['triples'][idx][1] = new_pred
             did_change = True
         return idx, (sub, obj), did_change
 
     def __len__(self):
-        if self.data_len is not None:
-            return self.data_len
-        else:
-            return len(self.scans)
+        return len(self.scans)
 
 
 def collate_fn_vaegan(batch, use_points=False):
@@ -708,7 +551,7 @@ def collate_fn_vaegan(batch, use_points=False):
             return -1
 
         outputs = {'objs': all_objs,
-                   'tripltes': all_triples,
+                   'triples': all_triples,
                    'boxes': all_boxes,
                    'obj_to_scene': all_obj_to_scene,
                    'tiple_to_scene': all_triple_to_scene}

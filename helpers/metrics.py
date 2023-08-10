@@ -102,36 +102,6 @@ def validate_constrains(triples, pred_boxes, gt_boxes, keep, vocab, accuracy, wi
             else:
                 accuracy['symmetrical to'].append(0)
                 accuracy['total'].append(0)
-        """     #! 修改下列上下左右的关系 0错误 1正确
-                if vocab["pred_idx_to_name"][p.item()][:-1] == "left":
-                    if box_s[3] > box_o[3] or (strict and box3d_iou(box_s, box_o, param6=param6, with_translation=True)[0] > overlap_threshold):
-                        print(f"{box_s} and {box_o} has the wrong relation left, should be right!")
-                        accuracy['left'].append(0)  
-                        accuracy['total'].append(0) 
-                    else: #! 正确: box_s[3] = s.x < box_o[3] = o,x
-                        accuracy['left'].append(1)
-                        accuracy['total'].append(1)
-                if vocab["pred_idx_to_name"][p.item()][:-1] == "right":
-                    if box_s[3] < box_o[3] or (strict and box3d_iou(box_s, box_o, param6=param6, with_translation=True)[0] > overlap_threshold):
-                        accuracy['right'].append(0)
-                        accuracy['total'].append(0)
-                    else:#! 正确: box_s[3] = s.x > box_o[3] = o.x
-                        accuracy['right'].append(1)
-                        accuracy['total'].append(1)
-                if vocab["pred_idx_to_name"][p.item()][:-1] == "front":
-                    if box_s[4] > box_o[4] or (strict and box3d_iou(box_s, box_o, param6=param6, with_translation=True)[0] > overlap_threshold):
-                        accuracy['front'].append(0)
-                        accuracy['total'].append(0)
-                    else:#!  s.y < o.y 
-                        accuracy['front'].append(1)
-                        accuracy['total'].append(1)
-                if vocab["pred_idx_to_name"][p.item()][:-1] == "behind":
-                    if box_s[4] < box_o[4] or (strict and box3d_iou(box_s, box_o, param6=param6, with_translation=True)[0] > overlap_threshold):
-                        accuracy['behind'].append(0)
-                        accuracy['total'].append(0)
-                    else:#! s.y > o.y
-                        accuracy['behind'].append(1)
-                        accuracy['total'].append(1) """
     return accuracy
 
 
@@ -150,35 +120,6 @@ def validate_constrains_changes(triples, pred_boxes, gt_boxes, keep, vocab, accu
                 box_o = denormalize(layout_boxes[o.item()].cpu().detach().numpy(), with_norm)
             else:
                 continue
-
-        """ if vocab["pred_idx_to_name"][p.item()][:-1] == "left":
-                if box_s[3] > box_o[3] or (strict and box3d_iou(box_s, box_o, with_translation=True)[0] > overlap_threshold):
-                    accuracy['left'].append(0)
-                    accuracy['total'].append(0)
-                else:
-                    accuracy['left'].append(1)
-                    accuracy['total'].append(1)
-            if vocab["pred_idx_to_name"][p.item()][:-1] == "right":
-                if box_s[3] < box_o[3] or (strict and box3d_iou(box_s, box_o, with_translation=True)[0] > overlap_threshold):
-                    accuracy['right'].append(0)
-                    accuracy['total'].append(0)
-                else:
-                    accuracy['right'].append(1)
-                    accuracy['total'].append(1)
-            if vocab["pred_idx_to_name"][p.item()][:-1] == "front":
-                if box_s[4] > box_o[4] or (strict and box3d_iou(box_s, box_o, with_translation=True)[0] > overlap_threshold):
-                    accuracy['front'].append(0)
-                    accuracy['total'].append(0)
-                else:
-                    accuracy['front'].append(1)
-                    accuracy['total'].append(1)
-            if vocab["pred_idx_to_name"][p.item()][:-1] == "behind":
-                if box_s[4] < box_o[4] or (strict and box3d_iou(box_s, box_o, with_translation=True)[0] > overlap_threshold):
-                    accuracy['behind'].append(0)
-                    accuracy['total'].append(0)
-                else:
-                    accuracy['behind'].append(1)
-                    accuracy['total'].append(1) """
         
         if vocab["pred_idx_to_name"][p.item()][:-1] == "left":
             if check_if_has_rel(box_s, box_o, type="left"):
@@ -207,6 +148,20 @@ def validate_constrains_changes(triples, pred_boxes, gt_boxes, keep, vocab, accu
                 accuracy['total'].append(1)
             else:
                 accuracy['behind'].append(0)
+                accuracy['total'].append(0)
+        if vocab["pred_idx_to_name"][p.item()][:-1] == "close by":
+            if check_if_has_rel(box_s, box_o, type="close by"):
+                accuracy['close by'].append(1)
+                accuracy['total'].append(1)
+            else:
+                accuracy['close by'].append(0)
+                accuracy['total'].append(0)
+        if vocab["pred_idx_to_name"][p.item()][:-1] == "symmetrical to":
+            if check_if_has_rel(box_s, box_o, type="symmetrical to"):
+                accuracy['symmetrical to'].append(1)
+                accuracy['total'].append(1)
+            else:
+                accuracy['symmetrical to'].append(0)
                 accuracy['total'].append(0)
 
     return accuracy
@@ -242,23 +197,6 @@ def corners_from_box(box, param6=True, with_translation=False):
     corners_3d = np.transpose(corners_3d)
 
     return corners_3d
-    """ if param6:
-        l, w, h, cx, cy, cz = box
-    else:
-        l, w, h, cx, cy, cz, _ = box
-
-    (tx, ty, tz) = (cx, cy, cz) if with_translation else (0,0,0)
-
-    x_corners = [l/2,l/2,-l/2,-l/2,l/2,l/2,-l/2,-l/2]
-    y_corners = [h/2,h/2,h/2,h/2,-h/2,-h/2,-h/2,-h/2]
-    z_corners = [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2]
-    corners_3d = np.dot(np.eye(3), np.vstack([x_corners,y_corners,z_corners]))
-    corners_3d[0,:] = corners_3d[0,:] + ty
-    corners_3d[1,:] = corners_3d[1,:] + tz
-    corners_3d[2,:] = corners_3d[2,:] + tx
-    corners_3d = np.transpose(corners_3d)
-
-    return corners_3d """
 
 def corners_from_box_up_z_axis(box):
     corner_offsets = [(-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1),
@@ -327,7 +265,7 @@ def check_if_has_rel(box1, box2, type, threshold_rad=0.05):
         box1_center = box1[3:]
         box2_center = box2[3:]
         def round_float(num):
-            return float("{:.2f}".format(num))
+            return float("{:.1f}".format(num))#! 比较后两位精度会降低，0.6
 
         return True if round_float(box1_center[0]) == round_float(box2_center[0]) or round_float(box1_center[1]) == round_float(box2_center[1]) else False 
 
@@ -343,7 +281,6 @@ def box3d_iou(box1, box2, param6=True, with_translation=False):
     # corner points are in counter clockwise order
     corners1 = corners_from_box(box1, param6, with_translation)
     corners2 = corners_from_box(box2, param6, with_translation)
-    #print(f"shape of corners1 and corners2: {corners1.shape}, {corners2.shape}")
 
     rect1 = [(corners1[i,0], corners1[i,2]) for i in range(3,-1,-1)] #两个边界框, 鸟瞰图
     rect2 = [(corners2[i,0], corners2[i,2]) for i in range(3,-1,-1)] #
@@ -352,10 +289,7 @@ def box3d_iou(box1, box2, param6=True, with_translation=False):
     area2 = poly_area(np.array(rect2)[:,0], np.array(rect2)[:,1])
 
     inter, inter_area = convex_hull_intersection(rect1, rect2)
-    #print(f"inter_area: {inter_area}, {area1}, {area2}")
-    #这个警告通常是由于在计算IOU时遇到了除以0的情况或者计算出的IOU的值为NaN导致的。
-    #可能是因为输入的边界框面积为0，或者两个边界框没有交集。建议在计算IOU前先检查输入的边界框是否存在问题，
-    #例如是否有负值或零值的宽度、长度或高度。如果检查后仍无法解决问题，请检查IOU计算公式是否正确，或者使用其他的IOU计算方法来替代当前的计算方法。
+
     iou_2d = inter_area/(area1+area2-inter_area)
     ymax = min(corners1[0,1], corners2[0,1])
     ymin = max(corners1[4,1], corners2[4,1])
