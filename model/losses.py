@@ -23,18 +23,11 @@ def bce_loss(input, target, reduce=True):
         return loss
 
 
-def calculate_model_losses(args, pred, target, name, angles=None, angles_pred=None, mu=None, logvar=None,
-                           KL_weight=None, writer=None, counter=None, withangles=False):
-    #args, orig_gt_box, orig_box, name='box', withangles=args.with_angles, angles_pred=orig_angle,
-    #mu=mu_box, logvar=logvar_box, angles=orig_gt_angle,
-    #KL_weight=0.1, writer=writer, counter=counter
+def calculate_model_losses(args, pred, target, name, mu=None, logvar=None, KL_weight=None, writer=None, counter=None):
     total_loss = 0.0
     losses = {}
     rec_loss = F.l1_loss(pred, target)#! 计算重建损失（rec_loss）为预测值（pred）与目标值（target）之间的L1损失
     total_loss = add_loss(total_loss, rec_loss, losses, name, 1)
-    #if withangles:
-    #    angle_loss = F.nll_loss(angles_pred, angles)
-    #    total_loss = add_loss(total_loss, angle_loss, losses, 'angle_pred', 1)
 
     try: #! KL散度损失，用于度量预测分布与目标分布之间的差异。
         loss_gauss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / mu.size(0)
@@ -49,8 +42,7 @@ def calculate_model_losses(args, pred, target, name, angles=None, angles_pred=No
 
     writer.add_scalar('Train Loss KL {}'.format(name), loss_gauss, counter)
     writer.add_scalar('Train Loss Rec {}'.format(name), rec_loss, counter)
-    #if withangles:
-    #    writer.add_scalar('Train Loss Angle {}'.format(name), angle_loss, counter)
+
     return total_loss, losses
 
 

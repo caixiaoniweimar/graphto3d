@@ -14,7 +14,6 @@ current_path = os.path.abspath(__file__)  # .../scripts/evaluate_vaegan.py
 # 获取上一级路径
 parent_path = os.path.dirname(current_path)# .../scripts
 sys.path.append(os.path.dirname(parent_path))  #.../graphto3d/
-
 from dataset.dataset_use_features_gt import RIODatasetSceneGraph, collate_fn_vaegan_points
 from model.VAE import VAE
 from model.atlasnet import AE_AtlasNet
@@ -155,7 +154,7 @@ def train():
         boxD = boxD.train()
 
     # instantiate auxiliary discriminator for shape and a respective optimizer
-    #! 辅助神经网络模块，它的作用是对输入的形状编码进行判断，看其是否合理，同时为给定的形状编码预测一个类别标签。这个类继承了nn.Module，它包含两个主要部分：一个分类器和一个判别器。
+    #! 辅助神经网络模块，它的作用是对输入的形状编码进行判断，看其是否合理(真实/伪造，判别器)，同时为给定的形状编码预测一个类别标签(分类器)。这个类继承了nn.Module，它包含两个主要部分：一个分类器和一个判别器。
     shapeClassifier = ShapeAuxillary(128, len(dataset.cat))
     shapeClassifier = shapeClassifier.cuda()
     shapeClassifier.train()
@@ -200,6 +199,8 @@ def train():
                 #! enc_tight_boxes: 所有的bbox -> param6
                 #! enc_objs_to_scene: 每个对象所属的场景索引
                 #! enc_triples_to_scene: 每个关系三元组所属的场景索引
+                enc_objs, enc_triples, enc_tight_boxes, enc_objs_to_scene, enc_triples_to_scene = data['encoder']['objs'],\
+                            data['encoder']['triples'], data['encoder']['boxes'], data['encoder']['obj_to_scene'], data['encoder']['tiple_to_scene']
 
                 if args.with_feats:
                     encoded_enc_points = data['encoder']['feats']
@@ -268,12 +269,10 @@ def train():
             encoded_dec_shape_priors[dec_scene_nodes] = torch.zeros([torch.sum(dec_scene_nodes), encoded_dec_shape_priors.shape[1]]).float().cuda()                                                        
 
             if args.num_box_params == 6:
-                # no angle. this will be learned separately if with_angle is true
                 enc_boxes = enc_tight_boxes[:, :6]
                 dec_boxes = dec_tight_boxes[:, :6]
             else:
                 raise NotImplementedError
-
             boxGloss = 0
             loss_genShape = 0
             loss_genShapeFake = 0

@@ -159,6 +159,7 @@ class BoxDiscriminator(nn.Module):
             return y[keep_t], reg[keep_t]
         elif keeps is not None and reg is None:
             return y[keep_t], reg
+        #! 最后，函数返回输出 y 和正则化项 reg。如果提供了 keeps 张量，那么只会返回 keeps 对应元素为真的那部分 y 和 reg
         else:
             return y, reg
         #! reg：这是一个与y形状相同的张量，表示梯度惩罚。梯度惩罚用于训练过程中的判别器，以确保梯度不会变得过大，从而有助于提高训练稳定性。如果with_grad参数为False，reg将为None。

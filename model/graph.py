@@ -238,6 +238,7 @@ class GraphTripleConvNet(nn.Module):
             'mlp_normalization': mlp_normalization,
             'output_dim': output_dim
         }
+        #print(f"247 - {input_dim_obj}, {input_dim_pred}")
         for i in range(self.num_layers):
             if output_dim is not None and i >=  self.num_layers - 1:
                 self.gconvs.append(GraphTripleConv(**gconv_kwargs_out))

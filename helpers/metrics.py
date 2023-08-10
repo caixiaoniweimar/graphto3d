@@ -281,7 +281,6 @@ def box3d_iou(box1, box2, param6=True, with_translation=False):
     # corner points are in counter clockwise order
     corners1 = corners_from_box(box1, param6, with_translation)
     corners2 = corners_from_box(box2, param6, with_translation)
-    #print(f"shape of corners1 and corners2: {corners1.shape}, {corners2.shape}")
 
     rect1 = [(corners1[i,0], corners1[i,2]) for i in range(3,-1,-1)] #两个边界框, 鸟瞰图
     rect2 = [(corners2[i,0], corners2[i,2]) for i in range(3,-1,-1)] #
@@ -290,10 +289,7 @@ def box3d_iou(box1, box2, param6=True, with_translation=False):
     area2 = poly_area(np.array(rect2)[:,0], np.array(rect2)[:,1])
 
     inter, inter_area = convex_hull_intersection(rect1, rect2)
-    #print(f"inter_area: {inter_area}, {area1}, {area2}")
-    #这个警告通常是由于在计算IOU时遇到了除以0的情况或者计算出的IOU的值为NaN导致的。
-    #可能是因为输入的边界框面积为0，或者两个边界框没有交集。建议在计算IOU前先检查输入的边界框是否存在问题，
-    #例如是否有负值或零值的宽度、长度或高度。如果检查后仍无法解决问题，请检查IOU计算公式是否正确，或者使用其他的IOU计算方法来替代当前的计算方法。
+
     iou_2d = inter_area/(area1+area2-inter_area)
     ymax = min(corners1[0,1], corners2[0,1])
     ymin = max(corners1[4,1], corners2[4,1])

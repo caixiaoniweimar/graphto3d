@@ -97,7 +97,6 @@ class RIODatasetSceneGraph(data.Dataset):
                 category = line.rstrip()
                 self.cat[category] = category
         #! cat: {'_scene_': '_scene_', 'bowl': 'bowl', 'box': 'box', 'can': 'can', 'cup': 'cup', 'fork': 'fork', 'knife': 'knife', 'pitcher': 'pitcher', 'plate': 'plate', 'support_table': 'support_table', 'tablespoon': 'tablespoon', 'teapot': 'teapot', 'teaspoon': 'teaspoon', 'obstacle': 'obstacle'}
-
         self.classes = dict(zip(sorted(self.cat), range(len(self.cat))))
         #! classes: {'_scene_': 0, 'bowl': 1, 'box': 2, 'can': 3, 'cup': 4, 'fork': 5, 'knife': 6, 'obstacle': 7, 'pitcher': 8, 'plate': 9, 'support_table': 10, 'tablespoon': 11, 'teapot': 12, 'teaspoon': 13}
         
@@ -348,9 +347,9 @@ class RIODatasetSceneGraph(data.Dataset):
                 continue     
         if self.use_scene_rels:
             # add _scene_ object and _in_scene_ connections
-            scene_idx = len(cat) #4
+            scene_idx = len(cat) #4  
             for i, ob in enumerate(cat): #!当前scene中的class_id(从0开始), 都和scene_idx(_scene_ object),有predicate-0: _in_scene_
-                triples.append([i, 0, scene_idx])
+                triples.append([i, 0, scene_idx])  #_in_scene_ 关系是从0开始的
             cat.append(0)
             # dummy scene box
             tight_boxes.append([-1, -1, -1, -1, -1, -1])
@@ -387,8 +386,6 @@ class RIODatasetSceneGraph(data.Dataset):
         output['encoder']['objs'] = cat#! 当前scene所有的class_id + _scene_(0)
         output['encoder']['triples'] = triples
         output['encoder']['boxes'] = tight_boxes
-        if self.use_points:
-            output['encoder']['points'] = list(obj_points.numpy())
 
         if self.with_feats:
             output['encoder']['feats'] = feats_in

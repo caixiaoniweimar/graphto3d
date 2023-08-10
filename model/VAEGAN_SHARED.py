@@ -324,15 +324,16 @@ class Sg2ScVAEModel(nn.Module):
 
         mu, logvar = self.encoder(enc_objs, enc_triples, enc_boxes, enc_shapes)#! 根据位置和形状嵌入表示计算均值（mu）和对数方差（logvar）
 
+        mu, logvar = self.encoder(enc_objs, enc_triples, enc_boxes, enc_shapes)#! 根据位置和形状嵌入表示计算均值（mu）和对数方差（logvar）- torch.Size([20, 256]), torch.Size([20, 256])
         if self.use_AE:
             z = mu
             raise ValueError("use_AE should be False")
         else:#! 重要！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！
             # reparameterization#! 从给定的均值（mu）和对数方差（logvar）中采样随机变量。
-            std = torch.exp(0.5*logvar)#!从对数方差（logvar）计算标准差（std）。这是通过取对数方差的一半并计算每个元素的指数来实现的。
+            std = torch.exp(0.5*logvar)#!从对数方差（logvar）计算标准差（std）。这是通过取对数方差的一半并计算每个元素的指数来实现的。#torch.Size([20, 256])
             # standard sampling
-            eps = torch.randn_like(std)#! 生成一个与std具有相同形状的随机张量，其元素符合标准正态分布（均值为0，标准差为1）
-            z = eps.mul(std).add_(mu)#!执行重参数化技巧。将随机张量eps与std进行元素级别相乘，然后将结果与mu相加。这样得到的z是一个新的随机张量，其元素服从由给定的均值（mu）和对数方差（logvar）定义的正态分布。
+            eps = torch.randn_like(std)#! 生成一个与std具有相同形状的随机张量，其元素符合标准正态分布（均值为0，标准差为1）#torch.Size([20, 256])
+            z = eps.mul(std).add_(mu)#! torch.Size([20, 256])  执行重参数化技巧。将随机张量eps与std进行元素级别相乘，然后将结果与mu相加。这样得到的z是一个新的随机张量，其元素服从由给定的均值（mu）和对数方差（logvar）定义的正态分布。
             #! 重参数化技巧的目的是允许我们在梯度下降优化过程中反向传播梯度，从而使神经网络能够学习生成随机变量的参数。
             #! z表示隐变量（latent variable），即从输入数据中学习到的一个潜在表示。在训练VAE时，模型试图在隐空间（latent space）中找到能够有效表示数据的低维表示。
             #! 解码器则从z恢复原始数据。在训练过程中，模型试图最小化输入数据和解码器输出数据之间的差异。
@@ -379,8 +380,7 @@ class Sg2ScVAEModel(nn.Module):
                 # take original nodes when untouched
                 touched_nodes = torch.tensor(sorted(nodes_added + manipulated_nodes)).long()
                 for touched_node in touched_nodes:
-                    z = torch.cat([z[:touched_node], z_prime[touched_node:touched_node + 1], z[touched_node + 1:]],
-                                  dim=0)
+                    z = torch.cat([z[:touched_node], z_prime[touched_node:touched_node + 1], z[touched_node + 1:]], dim=0)
             else:
                 z = z_prime
 
@@ -429,7 +429,6 @@ class Sg2ScVAEModel(nn.Module):
             return boxes_pred, (points, shapes_pred)
         
     def collect_train_statistics(self, train_loader):
-        # model = model.eval()
         mean_cat = None
 
         for idx, data in enumerate(train_loader):
@@ -454,7 +453,7 @@ class Sg2ScVAEModel(nn.Module):
                 continue
 
             dec_objs, dec_triples, dec_tight_boxes = dec_objs.cuda(), dec_triples.cuda(), dec_tight_boxes.cuda()
-            #print(f"shape of dec_tight_boxes: {dec_tight_boxes.shape}")
+            
             dec_boxes = dec_tight_boxes[:, :6]
 
             mean, logvar = self.encoder(dec_objs, dec_triples, dec_boxes, encoded_dec_points)

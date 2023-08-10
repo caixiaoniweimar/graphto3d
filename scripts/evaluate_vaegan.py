@@ -36,7 +36,6 @@ parser.add_argument('--label_file', required=False, type=str, default='.obj', he
 
 parser.add_argument('--with_points', type=bool_flag, default=False, help="if false, only predicts layout")
 parser.add_argument('--with_feats', type=bool_flag, default=True, help="Load Feats directly instead of points.")
-
 parser.add_argument('--manipulate', default=True, type=bool_flag)
 parser.add_argument('--path2atlas', required=False, default="/media/caixiaoni/xiaonicai-u/AtlasNetV2.2/AtlasNet/log/atlasnet_separate_cultery/network2.pth", type=str)
 parser.add_argument('--path2atlas2', required=False, default="/media/caixiaoni/xiaonicai-u/AtlasNetV2.2/AtlasNet2/log/AE_AtlasNet2_20230408T2110/atlasnet2.pth", type=str)
@@ -380,6 +379,7 @@ def validate_constrains_loop(testdataloader, model, point_ae=None, export_3d=Fal
                 colors.append(rgb)
             colors = np.asarray(colors) / 255.
 
+            
             # layout and shape visualization through open3d
             render(boxes_pred_den, shapes_pred=points_pred.cpu().detach(), colors=colors, render_boxes=True)
         visualize_num+=1
@@ -406,7 +406,6 @@ def validate_constrains_loop(testdataloader, model, point_ae=None, export_3d=Fal
         print('{} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} '.format(typ, np.mean(dic[keys[0]]), np.mean(dic[keys[1]]), np.mean(dic[keys[2]]), np.mean(dic[keys[3]]), np.mean(dic[keys[4]]), np.mean(dic[keys[5]]), np.mean(dic[keys[6]])))
         print('means of mean: {:.2f}'.format(np.mean([np.mean([np.mean(dic[keys[0]]), np.mean(dic[keys[1]])]),
                                                       np.mean([np.mean(dic[keys[2]]), np.mean(dic[keys[3]])]), np.mean(dic[keys[4]]), np.mean(dic[keys[5]]), np.mean(dic[keys[6]]) ])))
-
 
 
 if __name__ == "__main__": evaluate()
